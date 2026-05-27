@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: analytics_messages
+    description: "Couche analytique — messages extraits des fichiers blob."
+    columns:
+      - name: source_file
+        description: "Chemin du fichier source dans le blob storage."
+        tests:
+          - unique
+          - not_null
+      - name: message
+        description: "Contenu du message extrait du JSON."
+        tests:
+          - not_null

@@ -1,0 +1,26 @@
+Metadata-Version: 2.4
+Name: dbt-sqlite
+Version: 1.10.0
+Summary: A SQLite adapter plugin for dbt (data build tool)
+Home-page: https://github.com/codeforkjeff/dbt-sqlite
+Author: Jeff Chiu
+Author-email: jeff@codefork.com
+Classifier: Development Status :: 4 - Beta
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Operating System :: POSIX :: Linux
+License-File: LICENSE.txt
+Requires-Dist: dbt-core>=1.10.0
+Requires-Dist: dbt-core<2
+Requires-Dist: dbt-adapters~=1.16.0
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: summary
+
+Please see the github repository for detailed information
