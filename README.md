@@ -1,4 +1,4 @@
-# TP 1 - Azure Blob Storage - Azurite version Cloud
+# TP 1 – Azurite Blob Storage
 
 ### Nom : Lo
 ### Prénom : Pape
@@ -6,63 +6,85 @@
 ### Année : 2025 - 2026
 ### Prof : Arij AZZABI 
 
-
-
 ---
-## Objectifs
+
+## Objectif du TP
+
 À la fin de ce TP, vous serez capables de :
-- créer un Storage Account et un container `raw` sur Azure
-- envoyer un fichier JSON depuis le Cloud Shell avec Python
-- organiser les fichiers selon une structure Data Lake (partitions par date)
-- historiser les fichiers sans écraser les anciens
 
----
+- Utiliser Azurite comme émulateur Azure Blob Storage
+- Créer un container `raw`
+- Envoyer un fichier JSON depuis votre machine locale avec Python
+- Organiser les fichiers comme dans un Data Lake réel
 
-### Étape 1 – Ouvrir le Cloud Shell en PowerShell
-- Aller sur portal.azure.com
-- Cliquer sur l'icône Cloud Shell >_ en haut à droite
-- Choisir PowerShell
-- Si c'est la première utilisation, un storage account sera créé automatiquement pour persister vos fichiers
+### Architecture réalisée
 
----
-### Étape 2 - Créer un Resource Group et un Storage Account
-```powershell
-# Variables – adaptez à votre contexte
-$RESOURCE_GROUP = "rg-datalake-tp1"
-$STORAGE_ACCOUNT = "stdatalaketp1" + (Get-Random -Maximum 9999)   # nom unique obligatoire
-$LOCATION = "norwayeast"
-
-# Créer le Resource Group
-az group create `
-  --name $RESOURCE_GROUP `
-  --location $LOCATION
-
-# Créer le Storage Account
-az storage account create `
-  --name $STORAGE_ACCOUNT `
-  --resource-group $RESOURCE_GROUP `
-  --location $LOCATION `
-  --sku Standard_LRS `
-  --kind StorageV2
-
-# Récupérer la connection string
-$env:AZURE_STORAGE_CONNECTION_STRING = az storage account show-connection-string `
-  --name $STORAGE_ACCOUNT `
-  --resource-group $RESOURCE_GROUP `
-  --query connectionString `
-  --output tsv
-
-# Vérifier
-echo $env:AZURE_STORAGE_CONNECTION_STRING
+```
+Machine locale (VS Code) → 
+Fichier JSON → 
+Script Python → 
+Azurite Blob Storage (Container raw)
 ```
 
-![image](https://hackmd.io/_uploads/S1fi0lokGx.png)
-![image](https://hackmd.io/_uploads/Byo6Rxikzx.png)
-![image](https://hackmd.io/_uploads/SJ21JWi1zg.png)
-![image](https://hackmd.io/_uploads/S1Y-y-skMg.png)
+---
+
+## Pré-requis
+
+- Visual Studio Code installé
+- Python installé
+- Extension Azurite installée dans VS Code
 
 ---
-### Étape 3 - Créer la structure du projet
+
+## Configuration
+
+### Étape 1 : Installer Azurite dans VS Code
+
+Dans VS Code, ouvrir le marketplace des extensions (`Ctrl+Shift+X`), rechercher **Azurite** et installer l'extension Microsoft.
+
+> Version utilisée : **Azurite V3** (3.35.0) - supporte Blob, Queue et Table
+
+![image](https://hackmd.io/_uploads/r1Xt4vNlMg.png)
+
+---
+
+### Étape 2 : Démarrer Azurite
+
+```
+Ctrl + Shift + P → Azurite: Start
+```
+
+Résultat attendu en bas de VS Code :
+```
+Azurite Blob Service successfully listens on http://127.0.0.1:10001
+```
+![image](https://hackmd.io/_uploads/H143NwNlzx.png)
+
+---
+
+### Étape 3 : Désactiver le contrôle de version API
+
+Dans les paramètres VS Code (`Ctrl + ,`), rechercher :
+```
+Azurite Skip Api Version Check
+```
+
+Cocher l'option :
+> Skip the request API version check, request with all Api versions will be allowed.
+
+Puis **redémarrer Azurite** :
+```
+Ctrl + Shift + P → Azurite: Start
+```
+![image](https://hackmd.io/_uploads/HkTTVDEefl.png)
+![image](https://hackmd.io/_uploads/S1S0NwNeGe.png)
+
+---
+
+### Étape 4 : Créer le projet
+
+Dans PowerShell, créer la structure de dossiers :
+
 ```powershell
 mkdir TP-AZURE-BLOB
 cd TP-AZURE-BLOB
@@ -70,48 +92,86 @@ mkdir data
 mkdir scripts
 ```
 
-![image](https://hackmd.io/_uploads/rk-_kZsJMx.png)
-
----
-
-
-### Étape 4 – Installer la librairie Python Azure Blob
-```powershell
-python -m pip install azure-storage-blob --user
+Structure obtenue :
 ```
-> Sur le Cloud Shell, la librairie est souvent déjà disponible. Cette commande s'assure qu'elle est à jour.
-
-![image](https://hackmd.io/_uploads/H1FXgZikGx.png)
+TP-AZURE-BLOB/
+├── data/
+└── scripts/
+```
+![image](https://hackmd.io/_uploads/BJXySvElMg.png)
 
 ---
 
-### Étape 5 - Créer le fichier JSON
+### Étape 5 – Installer la librairie Python Azure Blob
+
+```powershell
+py -m pip install azure-storage-blob
+```
+
+Résultat attendu :
+```
+Successfully installed azure-core-1.41.0 azure-storage-blob-12.29.0 ...
+```
+
+![image](https://hackmd.io/_uploads/BkkgrP4eMg.png)
+![image](https://hackmd.io/_uploads/rJUeBw4gzg.png)
+
+---
+
+### Étape 6 : Définir la connection string Azurite
+
+```powershell
+$env:AZURE_STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"
+```
+
+Vérifier :
+
+```powershell
+echo $env:AZURE_STORAGE_CONNECTION_STRING
+# UseDevelopmentStorage=true
+```
+![image](https://hackmd.io/_uploads/rJ4ZBw4eMl.png)
+
+> Cette variable doit être redéfinie à chaque nouveau terminal PowerShell.
+
+---
+
+### Étape 7 : Créer un fichier JSON
+
 ```powershell
 '{"message": "hello azure", "source": "tp1"}' | Out-File -Encoding utf8 data/test.json
+```
 
-# Vérifier
+Vérifier le contenu :
+
+```powershell
 Get-Content data/test.json
+# {"message": "hello azure", "source": "tp1"}
 ```
-Résultat attendu :
-```json
-{"message": "hello azure", "source": "tp1"}
-```
+![image](https://hackmd.io/_uploads/BkW7BDNxfe.png)
 
-![image](https://hackmd.io/_uploads/Bk3BgboJMg.png)
+![image](https://hackmd.io/_uploads/SkOXSw4eGg.png)
 
 ---
 
-### Étape 6 - Créer le script Python
+### Étape 8 : Créer le script Python
+
+Créer le fichier `scripts/upload_blob.py` :
+
 ```powershell
-@'
+'@' | Out-File -Encoding utf8 scripts/upload_blob.py
+```
+
+Contenu du script :
+
+```python
 import os
-from pathlib import Path
+from pathlib import import Path
 from azure.storage.blob import BlobServiceClient
 
 CONTAINER_NAME = "raw"
 LOCAL_FILE_PATH = Path("data/test.json")
 BLOB_NAME = "test/test.json"
-
 
 def get_connection_string():
     connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
@@ -121,18 +181,12 @@ def get_connection_string():
         )
     return connection_string
 
-
 def upload_file():
     connection_string = get_connection_string()
-
-    if not LOCAL_FILE_PATH.exists():
-        raise FileNotFoundError(f"Fichier introuvable : {LOCAL_FILE_PATH}")
-
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-    container_client = blob_service_client.get_container_client(CONTAINER_NAME)
 
     try:
-        container_client.create_container()
+        blob_service_client.create_container(CONTAINER_NAME)
         print(f"Container créé : {CONTAINER_NAME}")
     except Exception:
         print(f"Container déjà existant : {CONTAINER_NAME}")
@@ -147,163 +201,127 @@ def upload_file():
 
     print(f"Upload réussi : {BLOB_NAME}")
 
-
 if __name__ == "__main__":
     upload_file()
-'@ | Out-File -Encoding utf8 scripts/upload_blob.py
 ```
-
-![image](https://hackmd.io/_uploads/H1hOgZo1Gx.png)
-![image](https://hackmd.io/_uploads/Skatl-iyMe.png)
-![image](https://hackmd.io/_uploads/ryXjlboJzx.png)
+![image](https://hackmd.io/_uploads/HyCVrPEgfl.png)
+![image](https://hackmd.io/_uploads/rkNHrvElzx.png)
 
 ---
 
-## Étape 7 - Exécuter le script
+### Étape 9 : Exécuter le script
+
 ```powershell
-python scripts/upload_blob.py
+py scripts/upload_blob.py
 ```
+
 Résultat attendu :
 ```
 Container créé : raw
 Upload réussi : test/test.json
 ```
-ou, si le container existe déjà :
-```
-Container déjà existant : raw
-Upload réussi : test/test.json
-```
-
-![image](https://hackmd.io/_uploads/B1lkZZoJzg.png)
-![image](https://hackmd.io/_uploads/S15e-ZjkMl.png)
+![image](https://hackmd.io/_uploads/B1lLrwNlzl.png)
 
 ---
 
-## Étape 8 - Vérifier le blob dans Azure
-```powershell
-az storage blob list `
-  --container-name raw `
-  --connection-string $env:AZURE_STORAGE_CONNECTION_STRING `
-  --output table
+### Étape 10 : Vérifier dans Azurite
+
+Dans l'extension **Azure Storage** de VS Code :
+
 ```
-![image](https://hackmd.io/_uploads/H1eSfWWiyGl.png)
-![image](https://hackmd.io/_uploads/rJhB-ZoJMg.png)
+WORKSPACE → Local → Attached Storage Accounts → Local Emulator
+  └── Blob Containers
+        └── raw
+              └── test
+                    └── test.json
+```
+
+Le fichier JSON est bien présent dans le container `raw`.
+
+![image](https://hackmd.io/_uploads/HkUdHvEeze.png)
+![image](https://hackmd.io/_uploads/HyCdrDEezx.png)
 
 ---
 
-## Étape 9 - Structurer le Data Lake (partitions par date)
-Modifier la variable `BLOB_NAME` dans le script :
+### Étape 11 : Structurer le Data Lake
+
+Organiser les fichiers avec une structure partitionnée par date, comme dans un vrai Data Lake :
+
 ```powershell
 (Get-Content scripts/upload_blob.py) `
   -replace 'BLOB_NAME = "test/test.json"', 'BLOB_NAME = "bitcoin/year=2026/month=05/day=10/test.json"' `
   | Set-Content scripts/upload_blob.py
 
-python scripts/upload_blob.py
+py scripts/upload_blob.py
 ```
 
-![image](https://hackmd.io/_uploads/BJqAZbs1Gx.png)
-![image](https://hackmd.io/_uploads/HJWNGbjyGx.png)
+Résultat attendu :
+```
+Container déjà existant : raw
+Upload réussi : bitcoin/year=2026/month=05/day=10/test.json
+```
 
-> **À retenir :** Dans un Data Lake, les données sont organisées avec des partitions logiques par date (`year=`, `month=`, `day=`). Cela permet des lectures efficaces en ne scannant que les partitions nécessaires.
+Structure dans Azurite :
+```
+raw/
+└── bitcoin/
+      └── year=2026/
+            └── month=05/
+                  └── day=10/
+                        └── test.json
+```
 
-![image](https://hackmd.io/_uploads/BJOUzbj1Gl.png)
-![image](https://hackmd.io/_uploads/HJEFGboJfe.png)
+![image](https://hackmd.io/_uploads/S1AYHv4xGe.png)
 
 ---
 
-## Étape 10 - Historiser les fichiers
-Dans un Data Lake, on ajoute de nouveaux fichiers plutôt que d'écraser les anciens.
+### Étape 12 : Historiser les fichiers
+
+Créer un second fichier JSON avec un contenu différent et l'uploader sous un nom différent :
+
 ```powershell
 # Nouveau contenu JSON
 '{"message": "second upload", "source": "tp1"}' | Out-File -Encoding utf8 data/test.json
 
-# Nouveau nom de blob (test_2 au lieu de test)
+# Changer le nom du blob (test_2 au lieu de test)
 (Get-Content scripts/upload_blob.py) `
   -replace 'bitcoin/year=2026/month=05/day=10/test.json', 'bitcoin/year=2026/month=05/day=10/test_2.json' `
   | Set-Content scripts/upload_blob.py
 
-python scripts/upload_blob.py
+py scripts/upload_blob.py
 ```
-![image](https://hackmd.io/_uploads/H1q9z-jyze.png)
 
-Vérifier les deux fichiers :
-```powershell
-az storage blob list `
-  --container-name raw `
-  --connection-string $env:AZURE_STORAGE_CONNECTION_STRING `
-  --prefix "bitcoin/" `
-  --output table
+Résultat attendu :
 ```
-![image](https://hackmd.io/_uploads/B1qpz-o1fe.png)
-![image](https://hackmd.io/_uploads/ryUJm-jkMx.png)
+Container déjà existant : raw
+Upload réussi : bitcoin/year=2026/month=05/day=10/test_2.json
+```
 
+Structure finale dans Azurite :
+```
+raw/
+├── bitcoin/
+│     └── year=2026/
+│           └── month=05/
+│                 └── day=10/
+│                       ├── test.json
+│                       └── test_2.json
+└── test/
+      └── test.json
+```
+![image](https://hackmd.io/_uploads/rkJoSDNlfx.png)
+![image](https://hackmd.io/_uploads/Bk8jrw4gMl.png)
 
 ---
 
-## Nettoyage 
-Pour éviter des coûts inutiles, supprimez les ressources après le TP :
-```powershell
-az group delete --name $RESOURCE_GROUP --yes --no-wait
-```
+## Résumé des commandes clés
 
-![image](https://hackmd.io/_uploads/BkUX7ZsJMl.png)
-
-Supprimer tous les fichiers et répertoires du projet.
-
-```PowerShell
-cd ..
-Remove-Item -Recurse -Force TP-AZURE-BLOB
-```
-![image](https://hackmd.io/_uploads/SJ6ur-ikfg.png)
-
----
-## Questions de compréhension
-
-- 1. **Différence entre Azurite et Azure Blob Storage réel ?**
-Azurite est un émulateur local qui tourne sur votre machine, gratuit et sans connexion internet. 
-Azure Blob Storage réel est un service cloud Microsoft payant, accessible partout, avec haute disponibilité, redondance et sécurité d'entreprise. 
-Azurite sert uniquement au développement et aux tests.
-
-- 2. **Pourquoi un container nommé raw ?**
-Dans l'architecture Data Lake, raw désigne la zone de données brutes, non transformées, telles qu'elles arrivent de la source. C'est une convention qui permet de distinguer les différentes couches : raw (brut) → processed (nettoyé) → curated (prêt à l'analyse).
-
-- 3. **Pourquoi organiser les blobs par partitions de date ?**
-Les partitions year=/month=/day= permettent de lire uniquement les données d'une période précise sans scanner tout le stockage. C'est crucial pour les performances quand le volume de données devient important (des milliers de fichiers). Les outils comme Spark ou Azure Data Factory exploitent nativement ces partitions.
-
-4. **Pourquoi historiser plutôt qu'écraser ?**
-Écraser un fichier détruit l'historique des données. En ajoutant de nouveaux fichiers, on peut rejouer des traitements sur des données passées, auditer les changements, détecter des anomalies dans le temps et respecter des obligations de conformité (RGPD, audit).
-
-
-5. **Qu'est-ce qu'une connection string et pourquoi ne pas la versionner ?**
-Une connection string est une chaîne qui contient l'adresse, le nom du compte et la clé d'accès secrète au Storage Account. La versionner dans Git exposerait publiquement cette clé - n'importe qui pourrait alors lire, modifier ou supprimer toutes vos données. On la stocke dans une variable d'environnement ($env:AZURE_STORAGE_CONNECTION_STRING) ou dans un coffre-fort secrets (Azure Key Vault).
-
-**6. Quel est l’intérêt pédagogique d’Azurite?**
-
-Azurite permet d'apprendre et de pratiquer les concepts Azure Blob Storage sans aucun prérequis financier ni compte cloud. Concrètement :
-- Gratuit et sans risque : pas de facturation, pas de ressources cloud consommées, on peut faire autant d'erreurs qu'on veut sans conséquence.
-- Travail hors ligne : pas besoin d'internet, l'émulateur tourne entièrement en local dans VS Code.
-- Mêmes concepts, même code : le SDK Python et les commandes utilisées avec Azurite sont identiques à ceux utilisés sur Azure réel — le passage en production ne nécessite que de changer la connection string.
-- Feedback immédiat : on voit directement dans l'explorateur VS Code les containers et blobs créés, ce qui rend les concepts de stockage très concrets et visuels.
-- Idéal en salle de classe : un simple PC suffit, sans dépendre d'un abonnement Azure ou d'une connexion réseau stable.
-
----
-## Livrables attendus
-- Capture d'écran du container `raw` dans le portail Azure
-- Capture d'écran des blobs dans le container (vue arborescente)
-- Script `scripts/upload_blob.py`
-- Capture des fichiers historisés (`test.json` et `test_2.json`)
-- Réponses aux questions de compréhension
-
----
-
-## Conclusion
-Dans ce TP, vous avez construit un mini Data Lake directement sur Azure. Vous avez appris à :
-créer un Storage Account et un container via Azure CLI depuis PowerShell
-envoyer des fichiers avec Python et le SDK `azure-storage-blob`
-structurer un Data Lake avec des partitions logiques par date
-historiser des fichiers sans écraser les données existantes
-Vous avez reproduit les concepts fondamentaux d'un stockage cloud DataOps sur une infrastructure Azure réelle.
-
+| Commande | Rôle |
+|---|---|
+| `Ctrl+Shift+P → Azurite: Start` | Démarrer Azurite dans VS Code |
+| `$env:AZURE_STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"` | Définir la connexion Azurite |
+| `py scripts/upload_blob.py` | Uploader un fichier vers Azurite |
+| `Get-Content data/test.json` | Vérifier le contenu d'un fichier |
 ---
 
 # TP 2 – Blob vers SQL (Azure Blob Storage - SQLite)
