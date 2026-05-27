@@ -1244,3 +1244,415 @@ Vous avez appris à :
 
 > **Le pipeline DataOps ne se contente plus de stocker les données : il produit maintenant une couche analytique industrialisée.**
 
+
+---
+
+# TP 4 - Orchestration du Pipeline DataOps
+
+
+
+---
+
+Ce TP est un **pipeline DataOps automatisé** qui enchaîne 4 étapes sans intervention manuelle : il upload un fichier JSON vers un stockage cloud local (Azurite), le charge dans une base SQLite, transforme les données avec dbt, puis valide leur qualité avec des tests dbt. Un orchestrateur Python (`run_pipeline.py`) coordonne tout dans le bon ordre, s'arrête en cas d'erreur, et écrit des logs horodatés à chaque étape. L'objectif est d'industrialiser le traitement de données : rendre le workflow reproductible, traçable et maintenable. C'est une introduction concrète aux pratiques DataOps réelles utilisées en entreprise.
+
+---
+
+**Fichiers du projet :**
+
+| Fichier | Rôle |
+|---|---|
+| `scripts/upload_blob.py` | Upload le fichier JSON vers Azurite (émulateur Azure Blob Storage) |
+| `scripts/load_blob_to_sql.py` | Récupère le fichier depuis Azurite et le charge dans SQLite |
+| `scripts/run_pipeline.py` | Orchestrateur principal - lance les 4 étapes dans l'ordre et gère les erreurs |
+| `dataops_dbt/models/schema.yml` | Définit les tests dbt (colonnes `not_null`, `unique`) sur le modèle `analytics_messages` |
+| `~/.dbt/profiles.yml` | Configuration de connexion dbt → SQLite, avec le chemin vers `database/dataops.db` |
+| `logs/pipeline.log` | Fichier de logs horodatés généré automatiquement à chaque exécution |
+| `database/dataops.db` | Base SQLite qui reçoit les données brutes puis les données transformées par dbt |
+## Aperçu du pipeline
+
+```
+upload_blob.py
+      |
+      v
+load_blob_to_sql.py
+      |
+      v
+dbt run
+      |
+      v
+dbt test
+```
+
+Le pipeline automatise l'ensemble de la chaîne DataOps :
+
+1. Upload vers Azurite Blob
+2. Chargement vers SQLite staging
+3. Transformation avec `dbt run`
+4. Validation avec `dbt test`
+
+---
+
+## Objectifs
+
+- Automatiser l'exécution du pipeline
+- Lancer plusieurs scripts dans le bon ordre
+- Gérer les erreurs
+- Générer des logs
+- Industrialiser un pipeline DataOps
+
+---
+
+## Pré-requis
+
+- TP 1 terminé
+- TP 2 terminé
+- TP 3 terminé
+- Azurite opérationnel
+- dbt configuré
+- Environnement virtuel Python (venv) activé
+- Dossier `models/example` supprimé si les modèles exemples dbt perturbent les tests
+
+---
+
+## Mise en place
+
+### Étape 1 : Ouvrir le projet
+
+```powershell
+cd "C:\Users\<votre_utilisateur>\TP-AZURE-BLOB"
+```
+
+Ou si le projet est sur le bureau :
+
+```powershell
+cd "$env:USERPROFILE\Desktop\TP-AZURE-BLOB"
+```
+
+---
+
+### Étape 2 : Activer le venv
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+Résultat attendu :
+
+```
+(.venv)
+```
+
+> Si PowerShell bloque l'activation, exécuter d'abord :
+> ```powershell
+> Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+> .venv\Scripts\Activate.ps1
+> ```
+
+---
+
+### Étape 3 : Vérifier Azurite
+
+Dans VS Code :
+
+```
+Ctrl + Shift + P → Azurite: Start
+```
+![image](https://hackmd.io/_uploads/rJYzCSNxfe.png)
+
+Azurite doit écouter sur : `127.0.0.1:10000`
+
+> En cas d'erreur de version API, démarrer Azurite avec :
+> ```powershell
+> azurite --skipApiVersionCheck
+> ```
+
+![image](https://hackmd.io/_uploads/SkWjYLNxfg.png)
+
+---
+
+### Étape 4 : Variable d'environnement
+
+```powershell
+$env:AZURE_STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"
+```
+
+Vérifier :
+
+```powershell
+echo $env:AZURE_STORAGE_CONNECTION_STRING
+# UseDevelopmentStorage=true
+```
+![image](https://hackmd.io/_uploads/Bk4oRSNgMg.png)
+
+> Cette variable doit être réinitialisée à chaque nouveau terminal PowerShell.
+
+---
+
+### Étape 5 : Créer le dossier logs
+
+```powershell
+mkdir logs
+```
+![image](https://hackmd.io/_uploads/S1KOkLEeGe.png)
+
+Le dossier logs/ est créé automatiquement (voir TP 3) par dbt lorsqu'on exécute les commandes comme :
+
+```powershell
+dbt debug
+dbt run
+dbt test
+dbt docs generate
+```
+
+---
+
+### Étape 6 : Créer le script orchestrateur
+
+```powershell
+New-Item -ItemType File -Path scripts/run_pipeline.py -Force
+```
+![image](https://hackmd.io/_uploads/r1-xe8Nezx.png)
+
+---
+
+### Étape 7 : Code du script orchestrateur
+
+Contenu de `scripts/run_pipeline.py` :
+
+```python
+import subprocess
+from datetime import datetime
+from pathlib import Path
+
+LOG_FILE = Path("logs/pipeline.log")
+DBT_PROJECT_DIR = "dataops_dbt"
+DBT_PROFILES_DIR = str(Path.home() / ".dbt")
+DBT = r"C:\Users\lopap\OneDrive\Bureau\Lab_Azurite_Blob\TP-AZURE-BLOB\.venv\Scripts\dbt.exe"
+
+def log(message):
+    LOG_FILE.parent.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    full_message = f"[{timestamp}] {message}"
+    print(full_message)
+    with open(LOG_FILE, "a", encoding="utf-8") as file:
+        file.write(full_message + "\n")
+
+def run_command(command, step_name):
+    log(f"START : {step_name}")
+    result = subprocess.run(
+        command,
+        shell=True,
+        capture_output=True,
+        text=True
+    )
+    if result.stdout:
+        log(result.stdout)
+    if result.stderr:
+        log(result.stderr)
+    if result.returncode != 0:
+        log(f"ERROR : {step_name}")
+        raise Exception(f"Pipeline failed at : {step_name}")
+    log(f"SUCCESS : {step_name}")
+
+def main():
+    log("PIPELINE STARTED")
+
+    run_command("python scripts/upload_blob.py", "UPLOAD BLOB")
+    run_command("python scripts/load_blob_to_sql.py", "LOAD SQLITE")
+    run_command(
+        f'"{DBT}" run --project-dir {DBT_PROJECT_DIR} --profiles-dir "{DBT_PROFILES_DIR}"',
+        "DBT RUN"
+    )
+    run_command(
+        f'"{DBT}" test --project-dir {DBT_PROJECT_DIR} --profiles-dir "{DBT_PROFILES_DIR}"',
+        "DBT TEST"
+    )
+
+    log("PIPELINE FINISHED")
+
+if __name__ == "__main__":
+    main()
+```
+
+![image](https://hackmd.io/_uploads/r13HlI4gfe.png)
+
+---
+
+### Étape 8 : Modifier `profiles.yml`
+
+Ouvrir le fichier :
+
+```powershell
+code "$env:USERPROFILE\.dbt\profiles.yml"
+```
+
+Remplacer le contenu par :
+
+```yaml
+dataops_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: sqlite
+      threads: 1
+      database: dataops
+      schema: main
+      schemas_and_paths:
+        main: "database/dataops.db"
+      schema_directory: "database"
+```
+![image](https://hackmd.io/_uploads/r13sg8VeGe.png)
+
+
+> **Pourquoi ce changement ?**  
+> Dans le TP 4, dbt est lancé depuis la racine du projet avec l'option `--project-dir`.  
+> Le chemin SQLite passe donc de `../database/dataops.db` à `database/dataops.db`.
+
+---
+
+### Étape 9 : Vérifier `schema.yml`
+
+Créer ou modifier `dataops_dbt/models/schema.yml` :
+
+```yaml
+version: 2
+
+models:
+  - name: analytics_messages
+    columns:
+      - name: source_file
+        tests:
+          - unique
+          - not_null
+      - name: message
+        tests:
+          - not_null
+```
+
+Supprimer les modèles exemple dbt si nécessaire :
+
+```powershell
+Remove-Item -Recurse -Force dataops_dbt\models\example
+```
+![image](https://hackmd.io/_uploads/rylNubLNlGg.png)
+
+---
+
+### Étape 10 : Exécuter le pipeline
+
+```powershell
+python scripts/run_pipeline.py
+```
+
+---
+
+## Résultats attendus
+
+### Sortie console
+
+```
+PIPELINE STARTED
+SUCCESS : UPLOAD BLOB
+SUCCESS : LOAD SQLITE
+SUCCESS : DBT RUN
+SUCCESS : DBT TEST
+PIPELINE FINISHED
+```
+
+![image](https://hackmd.io/_uploads/rJJwrLVxfx.png)
+
+
+### Logs (`logs/pipeline.log`)
+
+```
+START : UPLOAD BLOB
+SUCCESS : UPLOAD BLOB
+START : LOAD SQLITE
+SUCCESS : LOAD SQLITE
+START : DBT RUN
+SUCCESS : DBT RUN
+START : DBT TEST
+SUCCESS : DBT TEST
+```
+
+### Résultat dbt
+
+```
+PASS=3   WARN=0   ERROR=0
+```
+![image](https://hackmd.io/_uploads/rkeXLINefl.png)
+
+---
+
+## Vérifier les logs
+
+```powershell
+Get-Content logs/pipeline.log
+```
+![image](https://hackmd.io/_uploads/SJMKU8Vxzx.png)
+
+![image](https://hackmd.io/_uploads/BJTZtLVeGl.png)
+
+---
+
+## Gestion des erreurs
+
+| Erreur | Cause | Solution |
+|--------|-------|----------|
+| `WinError 10061` | Azurite arrêté | `Ctrl+Shift+P → Azurite: Start` ou `azurite --skipApiVersionCheck` |
+| `Variable AZURE_STORAGE_CONNECTION_STRING manquante` | Variable non définie dans le terminal | `$env:AZURE_STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"` |
+| `unable to open database file` | Chemin SQLite incorrect (`../database/`) | Corriger en `database/dataops.db` dans `profiles.yml` |
+| Tests dbt inattendus | Dossier `models/example` présent | `Remove-Item -Recurse -Force dataops_dbt\models\example` |
+
+---
+
+## Concepts clés
+
+### Orchestration
+Lancer plusieurs étapes dans le bon ordre de manière contrôlée : `upload_blob.py` → `load_blob_to_sql.py` → `dbt run` → `dbt test`.
+
+### Pipeline
+Chaîne de traitements automatisés partant d'un fichier JSON, le chargeant dans SQLite, transformant les données avec dbt, puis vérifiant leur qualité.
+
+### Logs
+Permettent de suivre l'exécution, comprendre où le pipeline échoue, garder une trace d'audit et faciliter le debugging.
+
+### Industrialisation
+Le pipeline devient automatisé, reproductible, contrôlé et maintenable.
+
+---
+
+## Questions de compréhension
+
+**1. Pourquoi utiliser un orchestrateur ?**
+Pour ne pas lancer chaque script manuellement un par un. L'orchestrateur garantit que les étapes s'exécutent dans le bon ordre, automatiquement, sans intervention humaine. Si une étape échoue, il s'arrête et signale l'erreur au lieu de continuer sur des données incorrectes.
+
+---
+
+**2. Pourquoi ajouter des logs ?**
+Les logs permettent de savoir exactement ce qui s'est passé, quand, et où le pipeline a échoué. Sans logs, déboguer un problème revient à travailler à l'aveugle. Ils servent aussi de trace d'audit : on peut prouver que le pipeline a bien tourné à une heure précise.
+
+---
+
+**3. Pourquoi arrêter le pipeline en cas d'erreur ?**
+Parce que chaque étape dépend de la précédente. Si l'upload échoue, il est inutile de charger des données dans SQLite. Si SQLite est vide, dbt va transformer des données inexistantes. Continuer malgré une erreur produirait des résultats faux ou corrompus en silence.
+
+---
+
+**4. Quelle est la différence entre un script et un pipeline ?**
+Un script exécute une seule tâche isolée (ex : uploader un fichier). Un pipeline enchaîne plusieurs scripts dans un ordre logique, avec gestion des erreurs, des logs et un état global. Le pipeline est reproductible et industrialisé ; le script seul est manuel et fragmenté.
+
+---
+
+**5. Pourquoi automatiser `dbt run` et `dbt test` ?**
+`dbt run` transforme les données brutes en données exploitables. `dbt test` vérifie que ces données respectent les règles de qualité (non null, unique…). Les automatiser garantit que la transformation et la validation sont toujours exécutées ensemble, sans oubli, à chaque fois que de nouvelles données arrivent.
+
+---
+
+## Livrables attendus
+
+- Script `scripts/run_pipeline.py`
+- Logs du pipeline (`logs/pipeline.log`)
+- Pipeline fonctionnel (sortie console complète)
+- Tests dbt réussis (`PASS=3`)
+- Réponses aux questions de compréhension
