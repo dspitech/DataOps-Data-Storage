@@ -1,4 +1,4 @@
-# TP 1 – Azurite Blob Storage
+# TP 1 - Azurite Blob Storage
 
 ### Nom : Lo
 ### Prénom : Pape
@@ -324,7 +324,7 @@ raw/
 | `Get-Content data/test.json` | Vérifier le contenu d'un fichier |
 ---
 
-# TP 2 – Blob vers SQL (Azure Blob Storage - SQLite)
+# TP 2 - Blob vers SQL (Azure Blob Storage - SQLite)
 
 
 
@@ -631,11 +631,7 @@ Le pipeline ne se contente plus de stocker les fichiers : il commence à **struc
 
 ---
 
-# TP 3 : dbt Analytics Engineering
-
-
-
-
+# TP 3 - dbt Analytics Engineering
 
 ## Pipeline complet du TP 3
 
@@ -649,7 +645,6 @@ dbt Models (analytics_messages)
 Dans ce TP, nous allons construire la couche analytique du pipeline DataOps à l'aide de dbt.
 
 ---
-
 
 
 ## 1. Objectif du TP
