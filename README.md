@@ -1674,3 +1674,573 @@ Un script exécute une seule tâche isolée (ex : uploader un fichier). Un pipel
 - Pipeline fonctionnel (sortie console complète)
 - Tests dbt réussis (`PASS=3`)
 - Réponses aux questions de compréhension
+
+---
+
+# TP 5 – Orchestration avec Airflow
+
+
+
+## Pipeline final
+
+```
+Apache Airflow
+      │
+      ▼
+  1. dbt run
+      │
+      ▼
+  2. dbt test
+      │
+      ▼
+Pipeline validé 
+```
+
+---
+
+## Objectif
+
+Ce TP introduit **Apache Airflow** comme orchestrateur professionnel pour automatiser la couche analytique construite avec dbt (remplaçant le script Python local du TP4).
+
+À l'issue du TP, vous serez capable de :
+
+- Installer Apache Airflow avec Docker Compose
+- Créer un environnement Airflow local
+- Monter le projet DataOps dans les conteneurs Docker
+- Installer dbt dans les conteneurs Airflow
+- Créer un DAG Airflow
+- Exécuter automatiquement `dbt run` et `dbt test`
+- Suivre l'exécution dans l'interface Airflow
+
+> **Note pédagogique** : Dans le TP4, le pipeline était orchestré avec un script Python local. Dans ce TP5, nous introduisons un orchestrateur professionnel : Apache Airflow.
+
+---
+
+## Pré-requis
+
+- TP1, TP2, TP3, TP4 terminés
+- Docker Desktop installé et lancé
+- Projet `TP-AZURE-BLOB` fonctionnel
+- Base SQLite `dataops.db` existante
+- Projet dbt `dataops_dbt` fonctionnel
+
+---
+
+## Architecture
+
+Le TP5 ne relance **pas** la partie Blob Storage (déjà validée dans les TP précédents). Le pipeline orchestré par Airflow se limite à :
+
+```
+dbt run  →  dbt test
+```
+
+> La partie ingestion Blob/SQLite est volontairement exclue pour éviter les problèmes de connexion entre Airflow Docker et Azurite local.
+
+### Structure de dossiers attendue
+
+```
+TP-AZURE-BLOB/
+├── airflow/
+│   ├── dags/
+│   ├── logs/
+│   ├── plugins/
+│   ├── config/
+│   └── docker-compose.yaml
+├── dataops_dbt/
+├── database/
+└── scripts/
+```
+
+---
+
+## Étapes
+
+### Étape 1 : Se placer dans le projet
+
+```powershell
+cd TP-AZURE-BLOB
+```
+![image](https://hackmd.io/_uploads/S1CcmYEeMg.png)
+
+---
+
+### Étape 2 : Créer le dossier Airflow
+
+```powershell
+mkdir airflow; cd airflow; mkdir dags, logs, plugins, config
+```
+![image](https://hackmd.io/_uploads/B1Rk4FElfg.png)
+
+---
+
+### Étape 3 : Télécharger le Docker Compose Airflow
+
+```powershell
+curl.exe -LfO https://airflow.apache.org/docs/apache-airflow/stable/docker-compose.yaml
+
+# Vérifier que le fichier existe
+dir
+```
+![image](https://hackmd.io/_uploads/SJhGNFEeGx.png)
+
+Vous devez voir : `docker-compose.yaml`
+![image](https://hackmd.io/_uploads/SkNEVYVlzl.png)
+
+---
+
+### Étape 4 : Créer le fichier `.env`
+
+```powershell
+Set-Content -Path .env -Value "AIRFLOW_UID=50000"
+Add-Content -Path .env -Value "_PIP_ADDITIONAL_REQUIREMENTS=dbt-core dbt-sqlite azure-storage-blob"
+
+# Vérifier
+Get-Content .env
+```
+
+**Résultat attendu :**
+```
+AIRFLOW_UID=50000
+_PIP_ADDITIONAL_REQUIREMENTS=dbt-core dbt-sqlite azure-storage-blob
+```
+![image](https://hackmd.io/_uploads/Symu4YExfl.png)
+
+> Les conteneurs Airflow ne connaissent pas automatiquement dbt. Il faut donc installer `dbt-core` et `dbt-sqlite` dans l'environnement Airflow.
+
+---
+
+### Étape 5 : Modifier `docker-compose.yaml`
+
+```powershell
+code docker-compose.yaml
+```
+
+Repérer la section `volumes` et **ajouter** la ligne `- ..:/opt/airflow/project` :
+
+```yaml
+volumes:
+  - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+  - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+  - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+  - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+  - ..:/opt/airflow/project        # ← ligne à ajouter
+```
+![image](https://hackmd.io/_uploads/SyJMrtNlze.png)
+
+> Cette ligne est essentielle : elle permet aux conteneurs Airflow d'accéder au projet situé dans le dossier parent.
+
+---
+
+### Étape 6 : Créer le profil dbt pour Docker
+
+```powershell
+cd ..       # Retourner à la racine du projet
+
+mkdir .dbt
+New-Item -ItemType File -Path .dbt\profiles.yml -Force
+code .dbt\profiles.yml
+```
+![image](https://hackmd.io/_uploads/rJDdHtNxfx.png)
+
+Contenu du fichier `profiles.yml` :
+
+```yaml
+dataops_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: sqlite
+      threads: 1
+      database: dataops
+      schema: main
+      schemas_and_paths:
+        main: "/opt/airflow/project/database/dataops.db"
+      schema_directory: "/opt/airflow/project/database"
+```
+
+> Dans Docker, le projet est visible à `/opt/airflow/project`. C'est pourquoi le chemin SQLite n'est plus un chemin Windows.
+
+![image](https://hackmd.io/_uploads/Bk1srYNeze.png)
+
+---
+
+### Étape 7 : Créer le DAG Airflow
+
+```powershell
+cd airflow
+
+New-Item -ItemType File -Path dags\dataops_pipeline_dag.py -Force
+code dags\dataops_pipeline_dag.py
+```
+![image](https://hackmd.io/_uploads/SJc18Y4xzg.png)
+
+Contenu du fichier `dataops_pipeline_dag.py` :
+
+```python
+from datetime import datetime
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+
+PROJECT_DIR = "/opt/airflow/project"
+
+with DAG(
+    dag_id="dataops_pipeline",
+    start_date=datetime(2026, 1, 1),
+    schedule=None,
+    catchup=False,
+    tags=["dataops", "dbt", "airflow"],
+) as dag:
+
+    dbt_run = BashOperator(
+        task_id="dbt_run",
+        bash_command=(
+            f"cd {PROJECT_DIR} && "
+            "dbt run --project-dir dataops_dbt "
+            "--profiles-dir /opt/airflow/project/.dbt"
+        ),
+    )
+
+    dbt_test = BashOperator(
+        task_id="dbt_test",
+        bash_command=(
+            f"cd {PROJECT_DIR} && "
+            "dbt test --project-dir dataops_dbt "
+            "--profiles-dir /opt/airflow/project/.dbt"
+        ),
+    )
+
+    dbt_run >> dbt_test
+```
+![image](https://hackmd.io/_uploads/SkH-ItEeGl.png)
+
+**Explication du DAG :**
+
+| Tâche | Rôle |
+|-------|------|
+| `dbt_run` | Exécute les transformations dbt |
+| `dbt_test` | Exécute les tests de qualité |
+
+La ligne `dbt_run >> dbt_test` signifie que `dbt_test` ne démarre qu'après la réussite de `dbt_run`.
+
+---
+
+### Étape 8 : Initialiser Airflow
+
+```powershell
+docker compose up airflow-init
+```
+![image](https://hackmd.io/_uploads/ByUHGdHxMx.png)
+![image](https://hackmd.io/_uploads/Syw5XOBeze.png)
+
+
+
+Attendre le message :
+```
+airflow-init exited with code 0
+```
+
+---
+
+### Étape 9 : Démarrer Airflow
+
+```powershell
+docker compose up -d
+
+# Vérifier les conteneurs
+docker compose ps
+```
+
+![image](https://hackmd.io/_uploads/ryATXuBxMg.png)
+![image](https://hackmd.io/_uploads/SykkS_Hezx.png)
+![image](https://hackmd.io/_uploads/SJPeruBgzl.png)
+
+
+Les services principaux doivent être en état `running` ou `healthy`.
+
+---
+
+### Étape 10 : Vérifier que dbt est installé
+
+```powershell
+docker compose exec airflow-worker dbt --version
+```
+
+**Résultat attendu :**
+```
+Core:
+  - installed: ...
+```
+![image](https://hackmd.io/_uploads/HJHXBuBgMx.png)
+
+---
+
+### Étape 11 : Ouvrir l'interface Airflow
+
+Ouvrir dans le navigateur : **http://localhost:8080**
+
+| Champ | Valeur |
+|-------|--------|
+| Login | `airflow` |
+| Mot de passe | `airflow` |
+
+![image](https://hackmd.io/_uploads/rkbIS_Bgzl.png)
+![image](https://hackmd.io/_uploads/HkFDBuHlGx.png)
+![image](https://hackmd.io/_uploads/H19oBurefx.png)
+
+---
+
+### Étape 12 : Vérifier que le DAG existe
+
+```powershell
+docker compose exec airflow-scheduler airflow dags list
+
+# Filtrer directement
+docker compose exec airflow-scheduler airflow dags list | findstr dataops
+```
+
+Le DAG attendu : `dataops_pipeline`
+
+![image](https://hackmd.io/_uploads/BJuW8OBlzx.png)
+
+---
+
+### Étape 13 : Activer le DAG
+
+```powershell
+docker compose exec airflow-scheduler airflow dags unpause dataops_pipeline
+```
+![image](https://hackmd.io/_uploads/rydEIuHeGx.png)
+
+---
+
+### Étape 14 : Lancer le DAG
+
+```powershell
+docker compose exec airflow-scheduler airflow dags trigger dataops_pipeline
+```
+![image](https://hackmd.io/_uploads/SJhwI_Sxze.png)
+
+---
+
+### Étape 15 : Vérifier le résultat
+
+Dans l'interface Airflow : **DAGs → dataops_pipeline → Graph**
+
+Les deux tâches doivent apparaître en **vert** :
+```
+dbt_run    dbt_test 
+```
+![image](https://hackmd.io/_uploads/ByNJw_SxMe.png)
+![image](https://hackmd.io/_uploads/rJe7DOSxMe.png)
+![image](https://hackmd.io/_uploads/H1YAv_BgGg.png)
+![image](https://hackmd.io/_uploads/Sy7IPOSeMg.png)
+![image](https://hackmd.io/_uploads/BJHKPOrxGx.png)
+![image](https://hackmd.io/_uploads/SkGivuHgGe.png)
+![image](https://hackmd.io/_uploads/HJo3wOHeGl.png)
+
+---
+
+## Commandes utiles
+
+```powershell
+# Afficher les conteneurs
+docker compose ps
+
+# Redémarrer Airflow
+docker compose up -d
+
+# Arrêter Airflow
+docker compose down
+
+# Logs du scheduler
+docker compose logs airflow-scheduler --tail=40
+
+# Logs du worker
+docker compose logs airflow-worker --tail=40
+
+# Relancer le parsing des DAGs
+docker compose restart airflow-dag-processor airflow-scheduler airflow-apiserver
+```
+
+---
+
+## Résolution des problèmes courants
+
+### Docker Desktop non démarré
+
+**Erreur :**
+```
+dockerDesktopLinuxEngine: The system cannot find the file specified
+```
+
+**Correction :** Ouvrir Docker Desktop, attendre l'état `running`, puis vérifier avec `docker ps`.
+
+---
+
+### Le DAG n'apparaît pas dans Airflow
+
+**Causes possibles :** fichier DAG dans le mauvais dossier, Airflow n'a pas relu les DAGs, scheduler inactif.
+
+```powershell
+# Vérifier que le fichier existe dans le conteneur
+docker compose exec airflow-scheduler ls /opt/airflow/dags
+
+# Relancer le parsing
+docker compose restart airflow-dag-processor airflow-scheduler airflow-apiserver
+```
+
+---
+
+### Le DAG est en pause
+
+```powershell
+docker compose exec airflow-scheduler airflow dags unpause dataops_pipeline
+```
+
+---
+
+### Erreur : `dbt: command not found`
+
+**Correction :** S'assurer que le fichier `.env` contient :
+```
+_PIP_ADDITIONAL_REQUIREMENTS=dbt-core dbt-sqlite azure-storage-blob
+```
+Puis :
+```powershell
+docker compose down
+docker compose up -d
+docker compose exec airflow-worker dbt --version
+```
+
+---
+
+### Erreur : `profiles-dir does not exist`
+
+**Erreur :** `Path '/opt/airflow/project/.dbt' does not exist`
+
+**Correction :**
+```powershell
+mkdir .dbt
+New-Item -ItemType File -Path .dbt\profiles.yml -Force
+```
+Puis renseigner `profiles.yml` avec les chemins Docker (voir Étape 6).
+
+---
+
+### Erreur de connexion Azurite dans Docker
+
+**Erreurs :** `Connection refused`, `AuthorizationFailure`, `Invalid base64`
+
+**Cause :** Airflow tourne dans Docker ; `127.0.0.1` ne pointe pas vers la même machine que Windows.
+
+**Décision retenue :** stabiliser le TP5 autour de la couche dbt et laisser l'ingestion Blob dans les TP1–TP4.
+
+---
+
+## Concepts clés
+
+| Concept | Description |
+|---------|-------------|
+| **Apache Airflow** | Orchestrateur de workflows permettant de définir des pipelines sous forme de DAGs |
+| **DAG** | Graphe Orienté Acyclique décrivant l'ordre d'exécution des tâches |
+| **Task** | Unité de travail dans un DAG (`dbt_run`, `dbt_test`) |
+| **BashOperator** | Opérateur Airflow permettant d'exécuter des commandes shell |
+| **Monitoring** | L'interface Airflow permet de suivre exécutions, erreurs, logs et durées des tâches |
+
+---
+
+## Questions de compréhension
+
+### 1. À quoi sert Apache Airflow ?
+
+Apache Airflow est un **orchestrateur de workflows**. Il permet de définir, planifier et surveiller des pipelines de données sous forme de DAGs. Concrètement dans ce TP, il remplace le script Python local du TP4 en automatisant l'exécution de `dbt run` puis `dbt test`, avec une interface visuelle pour suivre l'état de chaque tâche.
+
+---
+
+### 2. Différence entre un script Python et un DAG Airflow ?
+
+Un **script Python local** s'exécute manuellement, une seule fois, sans historique ni monitoring. Si une étape échoue, rien ne le signale automatiquement.
+
+Un **DAG Airflow** apporte en plus :
+- la **planification automatique** (cron, intervalle, déclencheur)
+- la **gestion des dépendances** entre tâches (`dbt_run >> dbt_test`)
+- le **monitoring visuel** avec logs, statuts et historique d'exécution
+- la **reprise sur erreur** - on peut relancer uniquement la tâche qui a échoué
+
+---
+
+### 3. Pourquoi faut-il monter le projet dans Docker ?
+
+Les conteneurs Airflow sont **isolés** du système de fichiers Windows. Sans montage, ils ne peuvent pas accéder au projet `TP-AZURE-BLOB`. La ligne ajoutée dans `docker-compose.yaml` :
+
+```yaml
+- ..:/opt/airflow/project
+```
+
+rend le dossier parent du projet visible à l'intérieur du conteneur sous le chemin `/opt/airflow/project`, ce qui permet à dbt de trouver les modèles et la base SQLite.
+
+---
+
+### 4. Pourquoi dbt doit-il être installé dans le conteneur Airflow ?
+
+Parce que les tâches du DAG s'exécutent **à l'intérieur des conteneurs Docker**, pas sur Windows. Le `dbt` installé dans le venv local Windows n'est pas accessible depuis Docker. C'est pourquoi on l'installe via la variable d'environnement dans `.env` :
+
+```
+_PIP_ADDITIONAL_REQUIREMENTS=dbt-core dbt-sqlite
+```
+
+Airflow installe automatiquement ces paquets au démarrage des conteneurs.
+
+---
+
+### 5. Pourquoi le chemin SQLite utilise-t-il `/opt/airflow/project` ?
+
+Parce que dans Docker, les chemins Windows n'existent pas. Le dossier `TP-AZURE-BLOB` a été monté dans le conteneur sous `/opt/airflow/project`. La base SQLite `dataops.db` se trouve donc à :
+
+```
+/opt/airflow/project/database/dataops.db
+```
+
+Le `profiles.yml` spécifique à Docker utilise ce chemin Linux absolu, à la place du chemin relatif `../database/dataops.db` utilisé en local.
+
+---
+
+### 6. Pourquoi avoir séparé l'ingestion Blob et l'orchestration dbt ?
+
+Parce qu'Azurite tourne **localement sur Windows** (`127.0.0.1`), alors que les conteneurs Airflow ont leur propre réseau interne. Depuis Docker, `127.0.0.1` ne pointe pas vers la machine Windows mais vers le conteneur lui-même, ce qui provoque des erreurs de connexion (`Connection refused`, `AuthorizationFailure`).
+
+La décision retenue a donc été de stabiliser le TP5 autour de ce qui fonctionne proprement dans Docker, à savoir la couche dbt, et de laisser l'ingestion Blob dans les TP1 à TP4.
+
+---
+
+### 7. Que signifie une tâche verte dans l'interface Airflow ?
+
+Une tâche verte signifie que la tâche s'est exécutée avec **succès** - le code de retour était 0, aucune erreur n'a été levée. Dans notre DAG, `dbt_run` en vert signifie que les transformations se sont bien appliquées, et `dbt_test` en vert signifie que tous les tests qualité ont passé (`not_null`, `unique`).
+
+---
+
+## Livrables attendus
+
+- Dossier `airflow/` fonctionnel
+- Fichier `docker-compose.yaml` modifié (avec le volume projet)
+- Fichier `.env`
+- Fichier `.dbt/profiles.yml`
+- DAG `dataops_pipeline_dag.py`
+- Capture Airflow avec `dbt_run` en succès 
+- Capture Airflow avec `dbt_test` en succès 
+- Réponses aux questions de compréhension
+
+
+---
+
+## Conclusion
+
+Ce TP vous a permis de mettre en place une orchestration DataOps avec Apache Airflow. Vous savez désormais :
+
+- Lancer Airflow avec Docker Compose
+- Créer un DAG et définir des dépendances entre tâches
+- Exécuter des commandes dbt depuis Airflow
+- Résoudre des problèmes de conteneurisation
+- Suivre un pipeline dans une interface de monitoring professionnelle
+
+> Le pipeline DataOps est maintenant **observable et orchestré** dans une interface professionnelle.
