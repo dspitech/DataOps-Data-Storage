@@ -1,12 +1,51 @@
-# TP 1 - Azurite Blob Storage
+# DataOps Pipeline - TP 1 à TP 5
 
-### Nom : Lo
-### Prénom : Pape
-### Cours : DataOps
-### Année : 2025 - 2026
-### Prof : Arij AZZABI 
+### Nom : Lo | Prénom : Pape
+### Cours : DataOps | Année : 2025 - 2026 | Prof : Arij AZZABI
+
+## Vue d'ensemble
+
+Ce repository regroupe l'ensemble des travaux pratiques du cours DataOps. Chaque TP construit une brique supplémentaire d'un pipeline de données complet, du stockage brut jusqu'à l'orchestration professionnelle.
+
+| TP | Titre | Technologie principale | Objectif |
+|---|---|---|---|
+| TP 1 | Azurite Blob Storage | Python + Azurite | Stocker des fichiers JSON dans un émulateur Azure Blob |
+| TP 2 | Blob vers SQL | Python + SQLite | Charger les blobs dans une base de données relationnelle |
+| TP 3 | dbt Analytics Engineering | dbt + SQLite | Transformer et tester les données avec dbt |
+| TP 4 | Orchestration locale | Python (subprocess) | Automatiser le pipeline avec un script orchestrateur |
+| TP 5 | Orchestration Airflow | Apache Airflow + Docker | Orchestrer avec un outil professionnel et une interface de monitoring |
 
 ---
+
+## Glossaire des concepts clés
+
+| Concept | Définition |
+|---|---|
+| **Blob Storage** | Service de stockage d'objets non structurés (fichiers, images, JSON…) dans le cloud. Dans Azure, les fichiers sont organisés en **containers** et accessibles via une URL unique. |
+| **Azurite** | Émulateur local d'Azure Blob Storage. Permet de développer et tester sans compte Azure ni connexion internet. Fonctionne sur `127.0.0.1:10000`. |
+| **Container** | Unité d'organisation dans le Blob Storage, analogue à un dossier racine. Ex : `raw` contient les fichiers bruts. |
+| **Data Lake** | Architecture de stockage qui conserve les données brutes dans leur format d'origine, organisées par partitions logiques (`year=`, `month=`, `day=`). |
+| **Partition** | Découpage logique des données par critère (ex : date). Permet de ne lire que les données nécessaires sans scanner tout le stockage. |
+| **Connection String** | Chaîne contenant l'adresse, le nom et la clé d'accès à un service Azure. Ne jamais la versionner dans Git. |
+| **Staging** | Zone intermédiaire entre les données brutes et les données finales. Reçoit les données structurées issues du stockage brut, prêtes à être transformées. |
+| **Idempotence** | Propriété d'un pipeline qui peut être relancé plusieurs fois sans créer de doublons ni d'effets de bord. Implémentée ici via `INSERT OR IGNORE` + contrainte `UNIQUE`. |
+| **dbt (data build tool)** | Outil de transformation de données. Permet d'écrire des transformations SQL versionnées, testées et documentées. Ne déplace pas de données — il transforme ce qui est déjà en base. |
+| **Modèle dbt** | Fichier `.sql` contenant un `SELECT`. dbt le matérialise en vue ou en table dans la base de données. Unité de base du pipeline dbt. |
+| **Matérialisation** | Façon dont dbt stocke le résultat d'un modèle : `view` (recalculée à chaque requête), `table` (stockage physique), `incremental` (ajout des nouvelles lignes uniquement), `ephemeral` (CTE temporaire). |
+| **Lineage (DAG)** | Graphe de dépendance entre les modèles et tables. Répond à la question : *d'où viennent ces données ?* Visible dans `dbt docs` sous forme de DAG. |
+| **DAG** | Directed Acyclic Graph — Graphe Orienté Acyclique. Représente l'ordre d'exécution des tâches sans cycle. Utilisé par dbt (lineage) et Airflow (pipeline). |
+| **`{{ ref() }}`** | Fonction Jinja dbt pointant vers un autre modèle du projet. Permet à dbt de calculer l'ordre d'exécution automatiquement. |
+| **`{{ source() }}`** | Fonction Jinja dbt pointant vers une table brute non gérée par dbt. Permet de tracer le lineage depuis les sources. |
+| **Orchestrateur** | Outil qui enchaîne automatiquement plusieurs tâches dans le bon ordre, gère les erreurs et génère des logs. Ex : script Python (`run_pipeline.py`) ou Apache Airflow. |
+| **Apache Airflow** | Orchestrateur de workflows open-source. Permet de définir des pipelines sous forme de DAGs, de les planifier, de les monitorer via une interface web. |
+| **BashOperator** | Opérateur Airflow permettant d'exécuter une commande shell dans une tâche du DAG. |
+| **Docker Compose** | Outil permettant de lancer plusieurs conteneurs Docker définis dans un fichier `docker-compose.yaml`. Utilisé ici pour démarrer Airflow et ses services. |
+| **Volume Docker** | Montage d'un dossier local dans un conteneur. Permet aux conteneurs Airflow d'accéder au projet `TP-AZURE-BLOB` via `/opt/airflow/project`. |
+| **RLS (Row Level Security)** | Mécanisme de sécurité PostgreSQL/Supabase limitant l'accès aux lignes d'une table selon l'utilisateur connecté. |
+| **Pipeline DataOps** | Chaîne complète : ingestion → staging → transformation → test → orchestration. Reproductible, traçable et automatisé. |
+---
+
+# TP 1 - Azurite Blob Storage
 
 ## Objectif du TP
 
