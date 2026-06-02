@@ -17,7 +17,7 @@ Ce repository regroupe l'ensemble des travaux pratiques du cours DataOps. Chaque
 
 ---
 
-## Glossaire des concepts clés
+## Concepts clés
 
 | Concept | Définition |
 |---|---|
