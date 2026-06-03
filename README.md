@@ -3457,10 +3457,10 @@ Dans ce TP, vous avez construit un pipeline DataOps professionnel en conditions 
 
 - Infrastructure provisionnée en code avec **Terraform** depuis le **Cloud Shell Azure**
 - VM Linux Ubuntu sur **Azure** configurée automatiquement via **cloud-init**
-- Accès sécurisé par **clé SSH générée dans le Cloud Shell** — la clé privée ne quitte jamais l'environnement de confiance
+- Accès sécurisé par **clé SSH générée dans le Cloud Shell** - la clé privée ne quitte jamais l'environnement de confiance
 - **Apache Airflow** déployé avec **Docker Compose** sur une VM distante
 - Pipeline complet : **Azure Blob → SQLite → dbt → Tests** orchestré en DAG
 - Sécurité réseau gérée via **NSG Azure** (SSH + port 8080 restreints à l'IP autorisée)
 - Secrets protégés via les **Variables Airflow**
 
-> Le pipeline DataOps tourne maintenant sur une infrastructure cloud réelle, automatisée, sécurisée et reproductible — déployée intégralement depuis le Cloud Shell Azure.
+> Le pipeline DataOps tourne maintenant sur une infrastructure cloud réelle, automatisée, sécurisée et reproductible - déployée intégralement depuis le Cloud Shell Azure.
