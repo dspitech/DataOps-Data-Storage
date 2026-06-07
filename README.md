@@ -5,7 +5,7 @@
 
 ## Vue d'ensemble
 
-Ce repository regroupe l'ensemble des travaux pratiques du cours DataOps. Chaque TP construit une brique supplémentaire d'un pipeline de données complet, du stockage brut jusqu'à l'orchestration professionnelle.
+Ce repository regroupe l'ensemble de travaux pratiques du cours DataOps. Chaque TP construit une brique supplémentaire d'un pipeline de données complet, du stockage brut jusqu'à l'orchestration professionnelle.
 
 | TP | Titre | Technologie principale | Objectif |
 |---|---|---|---|
