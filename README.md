@@ -36,7 +36,7 @@ Ce repository regroupe l'ensemble de travaux pratiques du cours DataOps. Chaque 
 | **Modèle dbt** | Fichier `.sql` contenant un `SELECT`. dbt le matérialise en vue ou en table dans la base de données. Unité de base du pipeline dbt. |
 | **Matérialisation** | Façon dont dbt stocke le résultat d'un modèle : `view` (recalculée à chaque requête), `table` (stockage physique), `incremental` (ajout des nouvelles lignes uniquement), `ephemeral` (CTE temporaire). |
 | **Lineage (DAG)** | Graphe de dépendance entre les modèles et tables. Répond à la question : *d'où viennent ces données ?* Visible dans `dbt docs` sous forme de DAG. |
-| **DAG** | Directed Acyclic Graph — Graphe Orienté Acyclique. Représente l'ordre d'exécution des tâches sans cycle. Utilisé par dbt (lineage) et Airflow (pipeline). |
+| **DAG** | Directed Acyclic Graph - Graphe Orienté Acyclique. Représente l'ordre d'exécution des tâches sans cycle. Utilisé par dbt (lineage) et Airflow (pipeline). |
 | **`{{ ref() }}`** | Fonction Jinja dbt pointant vers un autre modèle du projet. Permet à dbt de calculer l'ordre d'exécution automatiquement. |
 | **`{{ source() }}`** | Fonction Jinja dbt pointant vers une table brute non gérée par dbt. Permet de tracer le lineage depuis les sources. |
 | **Orchestrateur** | Outil qui enchaîne automatiquement plusieurs tâches dans le bon ordre, gère les erreurs et génère des logs. Ex : script Python (`run_pipeline.py`) ou Apache Airflow. |
