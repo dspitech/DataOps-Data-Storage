@@ -16,7 +16,7 @@ Ce repository regroupe l'ensemble de travaux pratiques du cours DataOps. Chaque 
 | TP 5 | Orchestration Airflow | Apache Airflow + Docker | Orchestrer avec un outil professionnel et une interface de monitoring |
 | TP 6 | Orchestration Airflow (Azure) | Apache Airflow + Docker + Terraform + Azure | Orchestrer avec un outil professionnel et une interface de monitoring dans Microsoft Azure |
 | TP 7 | Orchestration Airflow (Azure)| Apache Airflow + Docker + Terraform + Azure | Orchestrer avec un outil professionnel et une interface de monitoring dans Microsoft Azure + déploiement automatisé |
-| TP 8 | Orchestration Airflow | Apache Airflow + Docker + Terraform + Azure | Projet final |
+| TP 8 | Orchestration Airflow | Apache Airflow + Docker + Terraform + Azure | Projet final (Ajout d'autres fonctionnalités et captures à venir) |
 
 
 ---
@@ -33,7 +33,7 @@ Ce repository regroupe l'ensemble de travaux pratiques du cours DataOps. Chaque 
 | **Connection String** | Chaîne contenant l'adresse, le nom et la clé d'accès à un service Azure. Ne jamais la versionner dans Git. |
 | **Staging** | Zone intermédiaire entre les données brutes et les données finales. Reçoit les données structurées issues du stockage brut, prêtes à être transformées. |
 | **Idempotence** | Propriété d'un pipeline qui peut être relancé plusieurs fois sans créer de doublons ni d'effets de bord. Implémentée ici via `INSERT OR IGNORE` + contrainte `UNIQUE`. |
-| **dbt (data build tool)** | Outil de transformation de données. Permet d'écrire des transformations SQL versionnées, testées et documentées. Ne déplace pas de données — il transforme ce qui est déjà en base. |
+| **dbt (data build tool)** | Outil de transformation de données. Permet d'écrire des transformations SQL versionnées, testées et documentées. Ne déplace pas de données - il transforme ce qui est déjà en base. |
 | **Modèle dbt** | Fichier `.sql` contenant un `SELECT`. dbt le matérialise en vue ou en table dans la base de données. Unité de base du pipeline dbt. |
 | **Matérialisation** | Façon dont dbt stocke le résultat d'un modèle : `view` (recalculée à chaque requête), `table` (stockage physique), `incremental` (ajout des nouvelles lignes uniquement), `ephemeral` (CTE temporaire). |
 | **Lineage (DAG)** | Graphe de dépendance entre les modèles et tables. Répond à la question : *d'où viennent ces données ?* Visible dans `dbt docs` sous forme de DAG. |
