@@ -5236,7 +5236,7 @@ docker compose logs airflow-scheduler --tail=30
 
 ---
 
-## Récapitulatif — où s'exécute chaque commande ?
+## Récapitulatif - où s'exécute chaque commande ?
 
 | Étape | Cloud Shell Azure | VM Azure | Machine locale |
 |---|---|---|---|
@@ -5291,7 +5291,7 @@ Confirmer avec `yes`.
 |---|---|
 | **Terraform IaC** | Infrastructure définie en code versionnable — VM, réseau, NSG, Storage |
 | **cloud-init** | Script exécuté au premier démarrage de la VM — installe Docker, Python et dbt automatiquement |
-| **NSG** | Pare-feu Azure au niveau du subnet — autorise uniquement SSH et le port 8080 depuis l'IP configurée |
+| **NSG** | Pare-feu Azure au niveau du subnet - autorise uniquement SSH et le port 8080 depuis l'IP configurée |
 | **Clé SSH (Cloud Shell)** | La clé privée reste dans le Cloud Shell ; seule la clé publique est transmise à Azure |
 | **Variable Airflow** | Stockage sécurisé de secrets dans Airflow — évite d'écrire la chaîne de connexion en clair |
 | **Schedule Airflow** | Expression cron (`0 */6 * * *` = toutes les 6 heures) |
