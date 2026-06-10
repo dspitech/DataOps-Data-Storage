@@ -1,4 +1,4 @@
-# DataOps Pipeline - TP 1 à TP 7
+# DataOps Pipeline - TP 1 à TP 8
 
 ### Nom : Lo | Prénom : Pape
 ### Cours : DataOps | Année : 2025 - 2026 | Prof : Arij AZZABI
@@ -5157,6 +5157,8 @@ upload_blob → load_sqlite → dbt_run → dbt_test
 
 ![image](https://hackmd.io/_uploads/rJXDV3Lbfg.png)
 
+D'autres captures à venir >
+
 ### Lire les rapports générés
 
 ```bash
@@ -5164,6 +5166,8 @@ cat /home/dataops_admin/dataops-project/reports/quality_report.txt
 
 cat /home/dataops_admin/dataops-project/reports/security_report.txt
 ```
+
+D'autres captures à venir >
 
 ### Exemples de rapports attendus
 
@@ -5178,6 +5182,7 @@ Nombre de lignes        : 3
 Messages vides ou NULL  : 0
 Statut global           : OK
 ```
+D'autres captures à venir >
 
 **`reports/security_report.txt`** :
 ```
@@ -5189,6 +5194,8 @@ Statut global : OK
 Resultats :
 Aucun secret potentiel detecte.
 ```
+
+D'autres captures à venir >
 
 ### Vérifier les logs Airflow
 
@@ -5294,19 +5301,6 @@ Confirmer avec `yes`.
 ---
 
 ## Conclusion
-
-Ce projet construit un pipeline DataOps professionnel en conditions réelles, en deux phases :
-
-**TP5 — Infrastructure et ingestion :**
-```
-upload_blob → load_sqlite → dbt_run → dbt_test
-```
-
-**TP6 — Observabilité et sécurité :**
-```
-upload_blob → load_sqlite → dbt_run → dbt_test
-    → generate_quality_report → check_quality_status → security_check
-```
 
 Le pipeline ne se contente plus de s'exécuter. Il **produit une preuve lisible de son état**, **vérifie automatiquement la qualité des données** et **contrôle l'absence de secrets dans le projet**.
 
