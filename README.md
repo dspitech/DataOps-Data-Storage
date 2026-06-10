@@ -3954,3 +3954,1370 @@ rm ~/.ssh/id_rsa_tp6 ~/.ssh/id_rsa_tp6.pub
 
 ---
 
+# Projet DataOps - Orchestration Airflow sur Azure VM Linux
+
+### Nom : Lo
+### Prénom : Pape
+### Cours : DataOps
+### Année : 2025 - 2026
+### Prof : Arij AZZABI
+
+---
+
+## Description
+
+Ce projet met en place un pipeline DataOps complet déployé sur une infrastructure cloud Azure provisionnée entièrement en code avec Terraform. Une machine virtuelle Linux Ubuntu est créée automatiquement via cloud-init, sur laquelle Apache Airflow est déployé avec Docker Compose.
+
+Le pipeline orchestre sept tâches enchaînées : les données sont d'abord uploadées vers Azure Blob Storage, chargées dans une base SQLite, transformées et testées avec dbt, puis soumises à un contrôle qualité automatique qui génère un rapport lisible et fait échouer le pipeline en cas d'anomalie. Une dernière tâche de sécurité scanne les fichiers du projet pour détecter la présence de secrets potentiels écrits en clair dans le code.
+
+L'objectif est de produire un pipeline non seulement fonctionnel, mais observable, contrôlé et sécurisé  conformément aux bonnes pratiques DataOps.
+
+---
+
+## Pipeline
+
+```
+Terraform (IaC)
+      │
+      ▼
+Azure VM Linux (Ubuntu 24.04 LTS)
+      │
+      ▼
+Apache Airflow (Docker Compose)
+      │
+      └── DAG : dataops_pipeline
+                ├── upload_blob             → Azure Blob Storage
+                ├── load_sqlite             → SQLite (staging)
+                ├── dbt_run                 → Transformation analytique
+                ├── dbt_test                → Tests qualité dbt
+                ├── generate_quality_report → Rapport qualité SQLite
+                ├── check_quality_status    → Vérification statut (OK / WARNING)
+                └── security_check          → Détection de secrets dans le projet
+```
+
+---
+
+## Objectifs
+
+À l'issue de ce TP, vous serez capable de :
+
+- Provisionner une VM Linux sur Azure avec Terraform
+- Configurer Apache Airflow avec Docker Compose sur une VM distante
+- Déployer un DAG DataOps complet sur Airflow
+- Exposer l'interface Airflow via un NSG Azure
+- Automatiser l'installation avec `cloud-init`
+- Générer automatiquement un rapport qualité sur les données
+- Faire échouer un DAG proprement en cas de statut `WARNING`
+- Détecter des secrets potentiels dans les fichiers du projet
+
+---
+
+## Architecture complète
+
+```
+[Machine locale]
+    │  SSH (port 22)
+    │  HTTP (port 8080)
+    ▼
+[Azure NSG] - filtre IP source ──► autorisé
+    │
+    ▼
+[Azure VM Ubuntu 24.04]
+    ├── Docker Compose
+    │       └── Apache Airflow
+    └── /home/dataops_admin/dataops-project/
+            ├── airflow/dags/
+            ├── database/
+            ├── scripts/
+            ├── reports/
+            ├── dataops_dbt/
+            └── .dbt/
+```
+
+---
+
+## Prérequis
+
+- Compte Azure avec accès au **Cloud Shell Azure**
+
+> **Important** : toutes les commandes des étapes 1 à 9 s'exécutent dans le **Cloud Shell Azure** (bash), accessible depuis le portail Azure.
+
+### Vérifier les outils dans le Cloud Shell
+
+```bash
+az --version && terraform --version
+```
+
+![image](https://hackmd.io/_uploads/B1ISrjUbfg.png)
+
+---
+
+## Générer la clé SSH dans le Cloud Shell Azure
+
+```bash
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+
+ssh-keygen -t rsa -b 4096 -C "dataops-tp6-azure" -f ~/.ssh/id_rsa_tp6
+
+ssh-keygen -l -f ~/.ssh/id_rsa_tp6.pub
+
+cat ~/.ssh/id_rsa_tp6.pub
+```
+
+![image](https://hackmd.io/_uploads/Skx5HsIWGx.png)
+![image](https://hackmd.io/_uploads/rkf2SjIWGe.png)
+![image](https://hackmd.io/_uploads/S1z0BsIWfg.png)
+
+> **Résultat attendu** :
+> - `~/.ssh/id_rsa_tp6` → clé **privée**
+> - `~/.ssh/id_rsa_tp6.pub` → clé **publique** (injectée dans la VM Azure)
+
+---
+
+## Structure des fichiers Terraform
+
+```
+tp6-airflow-azure/
+├── providers.tf
+├── variables.tf
+├── terraform.tfvars
+├── main.tf
+├── outputs.tf
+└── cloud-init.yaml
+```
+
+---
+
+## Étape 1 - Créer la structure du projet
+
+> **Cloud Shell Azure**
+
+```bash
+mkdir tp6-airflow-azure
+cd tp6-airflow-azure
+mkdir scripts
+```
+
+![image](https://hackmd.io/_uploads/By7VUoLZGg.png)
+
+---
+
+## Étape 2 - providers.tf
+
+> **Cloud Shell Azure**
+
+```hcl
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 3.100"
+    }
+  }
+}
+
+provider "azurerm" {
+  features {}
+}
+```
+
+![image](https://hackmd.io/_uploads/HJdDIj8Zzx.png)
+
+---
+
+## Étape 3 - variables.tf
+
+> **Cloud Shell Azure**
+
+```hcl
+variable "resource_group_name" {
+  description = "Nom du Resource Group"
+  type        = string
+  default     = "rg-dataops-tp6"
+}
+
+variable "location" {
+  description = "Région Azure"
+  type        = string
+  default     = "norwayeast"
+}
+
+variable "vm_name" {
+  description = "Nom de la VM"
+  type        = string
+  default     = "vm-airflow-dataops"
+}
+
+variable "vm_size" {
+  description = "Taille de la VM"
+  type        = string
+  default     = "Standard_B2s"
+}
+
+variable "admin_username" {
+  description = "Nom d'utilisateur admin de la VM"
+  type        = string
+  default     = "dataops_admin"
+}
+
+variable "ssh_public_key_path" {
+  description = "Chemin vers la clé publique SSH dans le Cloud Shell"
+  type        = string
+  default     = "~/.ssh/id_rsa_tp6.pub"
+}
+
+variable "allowed_ip" {
+  description = "Votre IP publique autorisée pour SSH + Airflow (format : x.x.x.x)"
+  type        = string
+}
+
+variable "storage_account_name" {
+  description = "Nom unique du Storage Account (minuscules, max 24 caractères)"
+  type        = string
+}
+
+variable "tags" {
+  description = "Tags communs à toutes les ressources"
+  type        = map(string)
+  default = {
+    project     = "dataops-tp6"
+    environment = "dev"
+    cours       = "DataOps"
+  }
+}
+```
+
+![image](https://hackmd.io/_uploads/BJPpLi8Wze.png)
+
+---
+
+## Étape 4 - terraform.tfvars
+
+> **Cloud Shell Azure**
+
+Récupérez d'abord votre IP publique locale :
+
+```bash
+# Windows (PowerShell)
+(Invoke-WebRequest -Uri "https://api.ipify.org" -UseBasicParsing).Content
+```
+
+![image](https://hackmd.io/_uploads/B1frPi8ZGl.png)
+
+Puis créez le fichier en remplaçant `X.X.X.X` par votre IP :
+
+```hcl
+resource_group_name    = "rg-dataops-tp6"
+location               = "norwayeast"
+vm_name                = "vm-airflow-dataops"
+vm_size                = "Standard_B2s"
+admin_username         = "dataops_admin"
+ssh_public_key_path    = "~/.ssh/id_rsa_tp6.pub"
+allowed_ip             = "X.X.X.X"
+storage_account_name   = "sadataopstp6unique"
+```
+
+![image](https://hackmd.io/_uploads/SJCFDjL-fx.png)
+
+---
+
+## Étape 5 - main.tf
+
+> **Cloud Shell Azure**
+
+```hcl
+resource "azurerm_resource_group" "rg" {
+  name     = var.resource_group_name
+  location = var.location
+  tags     = var.tags
+}
+
+resource "azurerm_storage_account" "storage" {
+  name                     = var.storage_account_name
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = azurerm_resource_group.rg.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  tags                     = var.tags
+}
+
+resource "azurerm_storage_container" "raw" {
+  name                  = "raw"
+  storage_account_name  = azurerm_storage_account.storage.name
+  container_access_type = "private"
+}
+
+resource "azurerm_virtual_network" "vnet" {
+  name                = "vnet-dataops-tp6"
+  address_space       = ["10.0.0.0/16"]
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  tags                = var.tags
+}
+
+resource "azurerm_subnet" "subnet" {
+  name                 = "subnet-dataops"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = ["10.0.1.0/24"]
+}
+
+resource "azurerm_network_security_group" "nsg" {
+  name                = "nsg-dataops-tp6"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  tags                = var.tags
+
+  security_rule {
+    name                       = "allow-ssh"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "${var.allowed_ip}/32"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "allow-airflow-ui"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "8080"
+    source_address_prefix      = "${var.allowed_ip}/32"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "deny-all-inbound"
+    priority                   = 4096
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "nsg_assoc" {
+  subnet_id                 = azurerm_subnet.subnet.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
+}
+
+resource "azurerm_public_ip" "pip" {
+  name                = "pip-airflow-dataops"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  tags                = var.tags
+}
+
+resource "azurerm_network_interface" "nic" {
+  name                = "nic-airflow-dataops"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  tags                = var.tags
+
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.subnet.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.pip.id
+  }
+}
+
+resource "azurerm_network_interface_security_group_association" "nic_nsg" {
+  network_interface_id      = azurerm_network_interface.nic.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
+}
+
+resource "azurerm_linux_virtual_machine" "vm" {
+  name                = var.vm_name
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  size                = var.vm_size
+  admin_username      = var.admin_username
+  tags                = var.tags
+
+  custom_data = filebase64("cloud-init.yaml")
+
+  network_interface_ids = [
+    azurerm_network_interface.nic.id,
+  ]
+
+  admin_ssh_key {
+    username   = var.admin_username
+    public_key = file(var.ssh_public_key_path)
+  }
+
+  os_disk {
+    name                 = "osdisk-airflow-dataops"
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+    disk_size_gb         = 30
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "ubuntu-24_04-lts"
+    sku       = "server"
+    version   = "latest"
+  }
+
+  boot_diagnostics {}
+}
+```
+
+![image](https://hackmd.io/_uploads/Bkwhwi8-Mx.png)
+
+---
+
+## Étape 6 - outputs.tf
+
+> **Cloud Shell Azure**
+
+```hcl
+output "vm_public_ip" {
+  description = "IP publique de la VM"
+  value       = azurerm_public_ip.pip.ip_address
+}
+
+output "ssh_command" {
+  description = "Commande SSH pour se connecter à la VM"
+  value       = "ssh -i ~/.ssh/id_rsa_tp6 ${var.admin_username}@${azurerm_public_ip.pip.ip_address}"
+}
+
+output "airflow_ui_url" {
+  description = "URL de l'interface Airflow"
+  value       = "http://${azurerm_public_ip.pip.ip_address}:8080"
+}
+
+output "storage_connection_string" {
+  description = "Chaîne de connexion du Storage Account Azure"
+  value       = azurerm_storage_account.storage.primary_connection_string
+  sensitive   = true
+}
+
+output "storage_account_name" {
+  description = "Nom du Storage Account"
+  value       = azurerm_storage_account.storage.name
+}
+
+output "resource_group_name" {
+  description = "Nom du Resource Group"
+  value       = azurerm_resource_group.rg.name
+}
+```
+
+![image](https://hackmd.io/_uploads/Sy2Rws8bMx.png)
+
+---
+
+## Étape 7 - cloud-init.yaml
+
+> **Cloud Shell Azure**
+
+```yaml
+#cloud-config
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - git
+  - curl
+  - wget
+  - unzip
+  - python3
+  - python3-pip
+  - python3-venv
+  - jq
+  - make
+  - build-essential
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - sqlite3
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker dataops_admin
+  - systemctl enable docker
+  - systemctl start docker
+  - apt-get install -y docker-compose-plugin
+
+  - mkdir -p /home/dataops_admin/dataops-project/airflow/dags
+  - mkdir -p /home/dataops_admin/dataops-project/airflow/logs
+  - mkdir -p /home/dataops_admin/dataops-project/airflow/plugins
+  - mkdir -p /home/dataops_admin/dataops-project/airflow/config
+  - mkdir -p /home/dataops_admin/dataops-project/database
+  - mkdir -p /home/dataops_admin/dataops-project/scripts
+  - mkdir -p /home/dataops_admin/dataops-project/reports
+  - mkdir -p /home/dataops_admin/dataops-project/.dbt
+
+  - pip3 install --upgrade pip --break-system-packages
+  - pip3 install dbt-core dbt-sqlite azure-storage-blob --break-system-packages
+
+  - chown -R dataops_admin:dataops_admin /home/dataops_admin/dataops-project
+
+final_message: "VM DataOps prête après $UPTIME secondes."
+```
+
+![image](https://hackmd.io/_uploads/BkFzdiIbMe.png)
+
+Les fichiers au final :
+
+![image](https://hackmd.io/_uploads/S1piusUZze.png)
+
+---
+
+## Étape 8 - Déployer avec Terraform
+
+> **Cloud Shell Azure** - dans le dossier `tp6-airflow-azure/`
+
+```bash
+terraform init && terraform fmt && terraform validate && terraform plan && terraform apply -auto-approve
+```
+
+![image](https://hackmd.io/_uploads/B11lts8bGg.png)
+![image](https://hackmd.io/_uploads/r15xFjLbMg.png)
+![image](https://hackmd.io/_uploads/Hy9zFjIWzx.png)
+![image](https://hackmd.io/_uploads/S1JOtiLZze.png)
+![image](https://hackmd.io/_uploads/r1H5KjUZMg.png)
+![image](https://hackmd.io/_uploads/Sk8nFiLbfl.png)
+![image](https://hackmd.io/_uploads/SyYCto8Zzx.png)
+![image](https://hackmd.io/_uploads/HkWMqjIbfe.png)
+![image](https://hackmd.io/_uploads/SJFr5sUbfg.png)
+
+À la fin de `terraform apply`, notez les outputs :
+- `vm_public_ip` : l'IP de votre VM
+- `ssh_command` : la commande complète pour vous connecter
+
+---
+
+## Étape 9 - Se connecter à la VM
+
+### Depuis votre machine locale
+
+Téléchargez la clé privée via le menu **Télécharger/Charger** du Cloud Shell, puis :
+
+![image](https://hackmd.io/_uploads/rJGjcsLWfx.png)
+![image](https://hackmd.io/_uploads/rJkyjiIWGe.png)
+![image](https://hackmd.io/_uploads/r1nUiiUWzl.png)
+![image](https://hackmd.io/_uploads/BkFPisUbfe.png)
+![image](https://hackmd.io/_uploads/rJ6_si8bfg.png)
+
+```bash
+# Windows (PowerShell)
+ssh -i "C:\Users\tech\Downloads\id_rsa_tp6" dataops_admin@<IP_VM>
+```
+
+![image](https://hackmd.io/_uploads/BJjk2j8WMg.png)
+![image](https://hackmd.io/_uploads/SJ3e2sUWfl.png)
+
+### Attendre la fin de cloud-init (sur la VM)
+
+```bash
+sudo cloud-init status --wait
+# Résultat attendu : status: done
+```
+
+![image](https://hackmd.io/_uploads/SyjfnoU-Mx.png)
+
+---
+
+## Étape 10 - Déployer Airflow sur la VM
+
+> **Sur la VM**
+
+```bash
+cd /home/dataops_admin/dataops-project/airflow
+
+AIRFLOW_VERSION=2.9.3
+curl -LfO "https://airflow.apache.org/docs/apache-airflow/${AIRFLOW_VERSION}/docker-compose.yaml"
+
+cat > .env << EOF
+AIRFLOW_UID=$(id -u)
+AIRFLOW_GID=0
+_AIRFLOW_WWW_USER_USERNAME=airflow
+_AIRFLOW_WWW_USER_PASSWORD=DataOps2026!
+_PIP_ADDITIONAL_REQUIREMENTS=dbt-core dbt-sqlite azure-storage-blob
+EOF
+
+# Monter le dossier projet dans les conteneurs
+sed -i '/- \.\/plugins:\/opt\/airflow\/plugins/a\      - \/home\/dataops_admin\/dataops-project:\/opt\/airflow\/project' docker-compose.yaml
+
+# Initialiser et démarrer Airflow
+docker compose up airflow-init
+
+docker compose up -d
+
+# Vérifier que tous les conteneurs sont "healthy" (attendre ~2 min)
+docker compose ps
+```
+
+![image](https://hackmd.io/_uploads/HJivhi8-fe.png)
+![image](https://hackmd.io/_uploads/rkWo2iLWGe.png)
+![image](https://hackmd.io/_uploads/HkZ4po8-Me.png)
+![image](https://hackmd.io/_uploads/BkYB6o8ZMe.png)
+![image](https://hackmd.io/_uploads/rkBvajUWMe.png)
+![image](https://hackmd.io/_uploads/HJAn6sLZzl.png)
+![image](https://hackmd.io/_uploads/BJdkAjIbzx.png)
+
+---
+
+## Étape 11 - Configurer le projet DataOps sur la VM
+
+> **Sur la VM**
+
+### profiles.yml pour dbt
+
+```bash
+cat > /home/dataops_admin/dataops-project/.dbt/profiles.yml << 'EOF'
+dataops_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: sqlite
+      threads: 1
+      database: dataops
+      schema: main
+      schemas_and_paths:
+        main: "/opt/airflow/project/database/dataops.db"
+      schema_directory: "/opt/airflow/project/database"
+EOF
+```
+
+![image](https://hackmd.io/_uploads/SkoWRs8WMx.png)
+
+### Initialiser dbt
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv python3-full tree
+
+python3 -m venv venv
+source venv/bin/activate
+
+pip install --upgrade pip
+pip install dbt-core dbt-sqlite
+
+dbt --version
+
+cd /home/dataops_admin/dataops-project
+printf 'dataops_dbt\n1\n' | dbt init dataops_dbt
+
+rm -rf dataops_dbt/models/example
+```
+
+![image](https://hackmd.io/_uploads/r1gECj8Wfg.png)
+![image](https://hackmd.io/_uploads/rJE_Ro8bzl.png)
+![image](https://hackmd.io/_uploads/Hk9CRi8-zg.png)
+![image](https://hackmd.io/_uploads/rkhg13L-Gx.png)
+![image](https://hackmd.io/_uploads/S1pEyh8-Gx.png)
+![image](https://hackmd.io/_uploads/BJkIynIZzl.png)
+![image](https://hackmd.io/_uploads/H16vyhIWfx.png)
+![image](https://hackmd.io/_uploads/HyWzx3UZfg.png)
+![image](https://hackmd.io/_uploads/HkUtlhIWGg.png)
+![image](https://hackmd.io/_uploads/r1GLlnIbzl.png)
+![image](https://hackmd.io/_uploads/ry8oxhUbMg.png)
+
+### Créer le modèle analytique
+
+```bash
+cat > /home/dataops_admin/dataops-project/dataops_dbt/models/analytics_messages.sql << 'EOF'
+SELECT
+    source_file,
+    message
+FROM stg_blob_files
+WHERE message IS NOT NULL
+EOF
+```
+
+![image](https://hackmd.io/_uploads/SyN6gnI-fg.png)
+
+### Créer schema.yml
+
+```bash
+cat > /home/dataops_admin/dataops-project/dataops_dbt/models/schema.yml << 'EOF'
+version: 2
+
+models:
+  - name: analytics_messages
+    description: "Couche analytique — messages extraits des fichiers blob Azure."
+    columns:
+      - name: source_file
+        description: "Chemin du fichier source dans le blob storage Azure."
+        tests:
+          - unique
+          - not_null
+      - name: message
+        description: "Contenu du message extrait du JSON."
+        tests:
+          - not_null
+EOF
+```
+
+![image](https://hackmd.io/_uploads/SyKCehU-Gl.png)
+
+---
+
+## Étape 12 - Créer les scripts d'ingestion
+
+> **Sur la VM**
+
+### scripts/upload_blob.py
+
+```bash
+cat > /home/dataops_admin/dataops-project/scripts/upload_blob.py << 'EOF'
+import os
+import json
+from datetime import datetime
+from pathlib import Path
+from azure.storage.blob import BlobServiceClient
+
+CONTAINER_NAME = "raw"
+DATABASE_DIR   = Path("/opt/airflow/project/database")
+
+def get_connection_string():
+    cs = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    if not cs:
+        raise EnvironmentError("AZURE_STORAGE_CONNECTION_STRING manquant.")
+    return cs
+
+def upload_file():
+    cs  = get_connection_string()
+    now = datetime.utcnow()
+
+    payload = {
+        "message"  : f"hello azure depuis airflow - {now.isoformat()}",
+        "source"   : "tp6-airflow",
+        "timestamp": now.isoformat()
+    }
+
+    DATABASE_DIR.mkdir(parents=True, exist_ok=True)
+    local_file = DATABASE_DIR / "test.json"
+    local_file.write_text(json.dumps(payload))
+
+    blob_name = (
+        f"dataops/year={now.year}/month={now.month:02d}/"
+        f"day={now.day:02d}/test_{now.strftime('%H%M%S')}.json"
+    )
+
+    client    = BlobServiceClient.from_connection_string(cs)
+    container = client.get_container_client(CONTAINER_NAME)
+
+    try:
+        container.create_container()
+        print(f"Container créé : {CONTAINER_NAME}")
+    except Exception:
+        print(f"Container existant : {CONTAINER_NAME}")
+
+    blob = client.get_blob_client(container=CONTAINER_NAME, blob=blob_name)
+    with open(local_file, "rb") as f:
+        blob.upload_blob(f, overwrite=True)
+
+    print(f"Upload réussi : {blob_name}")
+
+if __name__ == "__main__":
+    upload_file()
+EOF
+```
+
+![image](https://hackmd.io/_uploads/rJs-bhU-fx.png)
+
+### scripts/load_blob_to_sql.py
+
+```bash
+cat > /home/dataops_admin/dataops-project/scripts/load_blob_to_sql.py << 'EOF'
+import os
+import json
+import sqlite3
+from pathlib import Path
+from azure.storage.blob import BlobServiceClient
+
+CONTAINER_NAME = "raw"
+DATABASE_PATH  = Path("/opt/airflow/project/database/dataops.db")
+
+def get_connection_string():
+    cs = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    if not cs:
+        raise EnvironmentError("AZURE_STORAGE_CONNECTION_STRING manquant.")
+    return cs
+
+def create_database():
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn   = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stg_blob_files (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_file TEXT UNIQUE,
+            message     TEXT,
+            loaded_at   TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.commit()
+    conn.close()
+    print("Base SQLite prête.")
+
+def load_blobs():
+    cs     = get_connection_string()
+    client = BlobServiceClient.from_connection_string(cs)
+    blobs  = client.get_container_client(CONTAINER_NAME).list_blobs()
+    conn   = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    count  = 0
+
+    for blob in blobs:
+        blob_name = blob.name
+        bc        = client.get_blob_client(container=CONTAINER_NAME, blob=blob_name)
+        data      = json.loads(bc.download_blob().readall())
+        message   = data.get("message")
+
+        cursor.execute(
+            "INSERT OR IGNORE INTO stg_blob_files (source_file, message) VALUES (?, ?)",
+            (blob_name, message)
+        )
+        if cursor.rowcount > 0:
+            count += 1
+            print(f"Chargé : {blob_name}")
+
+    conn.commit()
+    conn.close()
+    print(f"Chargement terminé — {count} nouveaux fichiers.")
+
+if __name__ == "__main__":
+    create_database()
+    load_blobs()
+EOF
+```
+
+![image](https://hackmd.io/_uploads/BkZ8ZnUZGe.png)
+
+---
+
+## Étape 13 - Créer les scripts qualité et sécurité
+
+> **Sur la VM**
+
+### scripts/generate_quality_report.py
+
+```bash
+cat > /home/dataops_admin/dataops-project/scripts/generate_quality_report.py << 'EOF'
+import sqlite3
+from pathlib import Path
+from datetime import datetime
+
+DATABASE_PATH = Path("/opt/airflow/project/database/dataops.db")
+REPORT_DIR    = Path("/opt/airflow/project/reports")
+REPORT_PATH   = REPORT_DIR / "quality_report.txt"
+
+def generate_report():
+    REPORT_DIR.mkdir(exist_ok=True)
+
+    if not DATABASE_PATH.exists():
+        raise FileNotFoundError(f"Base introuvable : {DATABASE_PATH}")
+
+    conn   = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM stg_blob_files")
+    row_count = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*)
+        FROM stg_blob_files
+        WHERE message IS NULL OR message = ''
+    """)
+    empty_messages = cursor.fetchone()[0]
+    conn.close()
+
+    status = "OK" if row_count > 0 and empty_messages == 0 else "WARNING"
+
+    report = f"""
+DATAOPS QUALITY REPORT
+======================
+Date execution          : {datetime.now()}
+Base SQLite             : {DATABASE_PATH}
+Table controlee         : stg_blob_files
+Nombre de lignes        : {row_count}
+Messages vides ou NULL  : {empty_messages}
+Statut global           : {status}
+"""
+
+    REPORT_PATH.write_text(report, encoding="utf-8")
+    print(report)
+    print(f"Rapport genere : {REPORT_PATH}")
+
+if __name__ == "__main__":
+    generate_report()
+EOF
+```
+
+![image](https://hackmd.io/_uploads/r1tdZ3LWfe.png)
+
+### scripts/check_quality_status.py
+
+```bash
+cat > /home/dataops_admin/dataops-project/scripts/check_quality_status.py << 'EOF'
+from pathlib import Path
+
+REPORT_PATH = Path("/opt/airflow/project/reports/quality_report.txt")
+
+def check_report():
+    if not REPORT_PATH.exists():
+        raise FileNotFoundError(f"Rapport introuvable : {REPORT_PATH}")
+
+    content = REPORT_PATH.read_text(encoding="utf-8")
+    print("Lecture du rapport qualité...")
+    print(content)
+
+    if "WARNING" in content:
+        raise ValueError(
+            "Statut WARNING détecté dans le rapport qualité."
+        )
+
+    print("Statut qualité OK.")
+
+if __name__ == "__main__":
+    check_report()
+EOF
+```
+
+![image](https://hackmd.io/_uploads/r1IoW2UZfg.png)
+
+### scripts/security_check.py
+
+```bash
+cat > /home/dataops_admin/dataops-project/scripts/security_check.py << 'EOF'
+from pathlib import Path
+
+PROJECT_ROOT = Path("/opt/airflow/project")
+REPORT_DIR   = Path("/opt/airflow/project/reports")
+REPORT_PATH  = REPORT_DIR / "security_report.txt"
+
+SENSITIVE_KEYWORDS = [
+    "password", "passwd", "secret", "token",
+    "api_key", "apikey", "access_key",
+    "connection_string", "DefaultEndpointsProtocol", "AccountKey",
+]
+
+IGNORED_DIRS = {
+    ".git", ".venv", "venv", "__pycache__",
+    "logs", "target", "dbt_packages",
+}
+
+CHECKED_EXTENSIONS = {".py", ".yml", ".yaml", ".txt", ".json"}
+
+# Le fichier .env contient des variables d'environnement légitimes (mots de passe Airflow, etc.)
+# Il est exclu du scan pour éviter les faux positifs.
+IGNORED_FILES = {".env"}
+
+def should_ignore(path):
+    return any(part in IGNORED_DIRS for part in path.parts)
+
+def should_check(path):
+    if should_ignore(path):
+        return False
+    if path.name in IGNORED_FILES:
+        return False
+    return path.suffix.lower() in CHECKED_EXTENSIONS
+
+def scan_file(path):
+    findings = []
+    try:
+        content = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return findings
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        lowered = line.lower()
+        for keyword in SENSITIVE_KEYWORDS:
+            if keyword.lower() in lowered:
+                findings.append(
+                    f"{path}:{line_number} -> mot-clé détecté : {keyword}"
+                )
+    return findings
+
+def run_security_check():
+    REPORT_DIR.mkdir(exist_ok=True)
+    all_findings = []
+
+    for path in PROJECT_ROOT.rglob("*"):
+        if path.is_file() and should_check(path):
+            all_findings.extend(scan_file(path))
+
+    status = "WARNING" if all_findings else "OK"
+
+    report_lines = [
+        "DATAOPS SECURITY REPORT",
+        "=======================",
+        "",
+        f"Statut global : {status}",
+        "",
+        "Résultats :",
+    ]
+    if all_findings:
+        report_lines.extend(all_findings)
+    else:
+        report_lines.append("Aucun secret potentiel détecté.")
+
+    report = "\n".join(report_lines)
+    REPORT_PATH.write_text(report, encoding="utf-8")
+    print(report)
+    print(f"Rapport sécurité généré : {REPORT_PATH}")
+
+    if all_findings:
+        raise ValueError("Secrets potentiels détectés dans le projet.")
+
+if __name__ == "__main__":
+    run_security_check()
+EOF
+```
+
+![image](https://hackmd.io/_uploads/BJ8p-3IWMe.png)
+
+---
+
+## Étape 14 - Créer le DAG Airflow complet
+
+> **Sur la VM**
+
+```bash
+cat > /home/dataops_admin/dataops-project/airflow/dags/dataops_pipeline_dag.py << 'EOF'
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+
+PROJECT_DIR  = "/opt/airflow/project"
+DBT_DIR      = f"{PROJECT_DIR}/dataops_dbt"
+PROFILES_DIR = f"{PROJECT_DIR}/.dbt"
+
+default_args = {
+    "owner"           : "dataops",
+    "depends_on_past" : False,
+    "email_on_failure": False,
+    "email_on_retry"  : False,
+    "retries"         : 1,
+    "retry_delay"     : timedelta(minutes=2),
+}
+
+with DAG(
+    dag_id          = "dataops_pipeline",
+    description     = "Pipeline DataOps : Blob → SQLite → dbt → Qualité → Sécurité",
+    default_args    = default_args,
+    start_date      = datetime(2026, 1, 1),
+    schedule        = "0 */6 * * *",
+    catchup         = False,
+    max_active_runs = 1,
+    tags            = ["dataops", "dbt", "blob", "sqlite", "quality", "security"],
+) as dag:
+
+    upload_blob = BashOperator(
+        task_id      = "upload_blob",
+        bash_command = f"cd {PROJECT_DIR} && python3 scripts/upload_blob.py",
+        env={
+            "AZURE_STORAGE_CONNECTION_STRING":
+                "{{ var.value.azure_storage_connection_string }}"
+        },
+    )
+
+    load_sqlite = BashOperator(
+        task_id      = "load_sqlite",
+        bash_command = f"cd {PROJECT_DIR} && python3 scripts/load_blob_to_sql.py",
+        env={
+            "AZURE_STORAGE_CONNECTION_STRING":
+                "{{ var.value.azure_storage_connection_string }}"
+        },
+    )
+
+    dbt_run = BashOperator(
+        task_id      = "dbt_run",
+        bash_command = (
+            f"python3 -m dbt run "
+            f"--project-dir {DBT_DIR} "
+            f"--profiles-dir {PROFILES_DIR}"
+        ),
+    )
+
+    dbt_test = BashOperator(
+        task_id      = "dbt_test",
+        bash_command = (
+            f"python3 -m dbt test "
+            f"--project-dir {DBT_DIR} "
+            f"--profiles-dir {PROFILES_DIR}"
+        ),
+    )
+
+    generate_quality_report = BashOperator(
+        task_id      = "generate_quality_report",
+        bash_command = (
+            f"cd {PROJECT_DIR} && "
+            "python3 scripts/generate_quality_report.py"
+        ),
+    )
+
+    check_quality_status = BashOperator(
+        task_id      = "check_quality_status",
+        bash_command = (
+            f"cd {PROJECT_DIR} && "
+            "python3 scripts/check_quality_status.py"
+        ),
+    )
+
+    security_check = BashOperator(
+        task_id      = "security_check",
+        bash_command = (
+            f"cd {PROJECT_DIR} && "
+            "python3 scripts/security_check.py"
+        ),
+    )
+
+    (
+        upload_blob
+        >> load_sqlite
+        >> dbt_run
+        >> dbt_test
+        >> generate_quality_report
+        >> check_quality_status
+        >> security_check
+    )
+EOF
+```
+
+![image](https://hackmd.io/_uploads/HkXbfhU-fg.png)
+
+---
+
+## Étape 15 - Configurer la Connection String dans Airflow
+
+### Récupérer la chaîne de connexion (Cloud Shell Azure)
+
+```bash
+# Depuis le dossier terraform
+terraform output -raw storage_connection_string
+```
+
+![image](https://hackmd.io/_uploads/S1e7fnLZMe.png)
+
+### Via l'interface web Airflow
+
+1. Ouvrir `http://<IP_VM>:8080`
+2. Se connecter : `airflow` / `DataOps2026!`
+3. Aller dans **Admin → Variables → Add**
+4. Ajouter :
+
+| Clé | Valeur |
+|-----|--------|
+| `azure_storage_connection_string` | La chaîne de connexion copiée ci-dessus |
+
+![image](https://hackmd.io/_uploads/SJcSM3UWzl.png)
+![image](https://hackmd.io/_uploads/ByeHwfhU-Ml.png)
+![image](https://hackmd.io/_uploads/HyU2f3LWGe.png)
+![image](https://hackmd.io/_uploads/HJYTGhUbMx.png)
+
+---
+
+## Étape 16 - Activer et déclencher le DAG
+
+> **Sur la VM**
+
+```bash
+cd /home/dataops_admin/dataops-project/airflow
+
+docker compose exec airflow-scheduler airflow variables set \
+  azure_storage_connection_string \
+  ""
+  
+  
+docker compose exec airflow-scheduler airflow dags unpause dataops_pipeline
+docker compose exec airflow-scheduler airflow dags trigger dataops_pipeline
+docker compose exec airflow-scheduler airflow dags list-runs -d dataops_pipeline
+```
+
+![image](https://hackmd.io/_uploads/Hy5UQn8Zzl.png)
+![image](https://hackmd.io/_uploads/HJDqmhLbMg.png)
+![image](https://hackmd.io/_uploads/ryElVnUbMe.png)
+![image](https://hackmd.io/_uploads/BkLQVhLWGe.png)
+
+---
+
+## Étape 17 - Vérifier les résultats
+
+### Interface Airflow
+
+Ouvrir `http://<IP_VM>:8080` → **DAGs → dataops_pipeline → Graph**
+
+Les 7 tâches doivent être en **vert** :
+
+```
+upload_blob → load_sqlite → dbt_run → dbt_test
+    → generate_quality_report → check_quality_status → security_check
+```
+
+![image](https://hackmd.io/_uploads/rJXDV3Lbfg.png)
+
+### Lire les rapports générés
+
+```bash
+cat /home/dataops_admin/dataops-project/reports/quality_report.txt
+
+cat /home/dataops_admin/dataops-project/reports/security_report.txt
+```
+
+### Exemples de rapports attendus
+
+**`reports/quality_report.txt`** :
+```
+DATAOPS QUALITY REPORT
+======================
+Date execution          : 2026-01-15 10:32:00
+Base SQLite             : /opt/airflow/project/database/dataops.db
+Table controlee         : stg_blob_files
+Nombre de lignes        : 3
+Messages vides ou NULL  : 0
+Statut global           : OK
+```
+
+**`reports/security_report.txt`** :
+```
+DATAOPS SECURITY REPORT
+=======================
+
+Statut global : OK
+
+Resultats :
+Aucun secret potentiel detecte.
+```
+
+### Vérifier les logs Airflow
+
+```bash
+docker compose logs airflow-worker --tail=50
+docker compose logs airflow-scheduler --tail=30
+```
+
+---
+
+## Comportements attendus selon les cas
+
+| Situation | Tâche concernée | Résultat |
+|---|---|---|
+| Données présentes, aucun message vide | `check_quality_status` | ✅ Succès (`OK`) |
+| Table vide ou messages NULL | `check_quality_status` | ❌ Échec (`WARNING`) |
+| Mot-clé sensible trouvé dans le code | `security_check` | ❌ Échec (`WARNING`) |
+| Aucun secret détecté | `security_check` | ✅ Succès (`OK`) |
+
+---
+
+## Résolution des problèmes courants
+
+| Problème | Cause | Solution |
+|---|---|---|
+| `Permission denied (publickey)` | Mauvaise clé SSH ou chemin incorrect | Vérifier `ssh_public_key_path` et utiliser `-i ~/.ssh/id_rsa_tp6` |
+| `WARNING: UNPROTECTED PRIVATE KEY FILE!` | Permissions trop larges sur la clé | `chmod 600 ~/.ssh/id_rsa_tp6` |
+| Port 8080 inaccessible | Le NSG bloque votre IP | Vérifier `allowed_ip` dans `terraform.tfvars` |
+| Port 22 refusé (timeout) | cloud-init non terminé | Attendre 5 min puis `sudo cloud-init status --wait` |
+| `docker: command not found` | cloud-init non terminé | Attendre `sudo cloud-init status --wait` |
+| DAG en erreur `variable not found` | Variable Airflow non configurée | Ajouter `azure_storage_connection_string` dans Admin → Variables |
+| `dbt: command not found` dans le conteneur | `_PIP_ADDITIONAL_REQUIREMENTS` absent ou PATH incorrect | Vérifier `.env`, relancer `docker compose up -d`, et utiliser `python3 -m dbt` dans le DAG |
+| `unable to open database file` | Volume non monté ou chemin incorrect | Vérifier `profiles.yml` et le volume dans `docker-compose.yaml` |
+| Statut `WARNING` sur `check_quality_status` | Table vide ou messages NULL | Relancer `upload_blob` et `load_sqlite` manuellement |
+| `security_check` échoue | Mot-clé sensible détecté dans un fichier | Remplacer les secrets en dur par des Variables Airflow |
+| DAG non visible après modification | Erreur de syntaxe Python | Vérifier avec `docker compose exec airflow-scheduler airflow dags list` |
+| VM lente ou mémoire insuffisante | `Standard_B1s` insuffisant | Utiliser `Standard_B2s` comme configuré |
+
+---
+
+## Récapitulatif — où s'exécute chaque commande ?
+
+| Étape | Cloud Shell Azure | VM Azure | Machine locale |
+|---|---|---|---|
+| Générer la clé SSH | ✅ | | |
+| `terraform init/plan/apply/destroy` | ✅ | | |
+| `terraform output ssh_command` | ✅ | | |
+| Connexion SSH | ✅ | | ✅ |
+| `sudo cloud-init status --wait` | | ✅ | |
+| `docker compose up` | | ✅ | |
+| Créer scripts, `.env`, `profiles.yml` | | ✅ | |
+| `dbt init` | | ✅ | |
+| `airflow dags trigger` | | ✅ | |
+| Lire les rapports qualité / sécurité | | ✅ | |
+| Interface Airflow (navigateur) | | | ✅ |
+
+---
+
+## Questions de recul
+
+**1. Pourquoi générer un rapport qualité après `dbt test` ?**  
+`dbt test` vérifie les contraintes du modèle (unicité, non-null). Le rapport qualité mesure l'état réel des données (volume, complétude) et produit une preuve lisible et archivable de l'exécution.
+
+**2. Pourquoi faire échouer une tâche Airflow en cas de statut `WARNING` ?**  
+Un pipeline silencieux qui absorbe les erreurs est dangereux en production. L'échec visible force une intervention humaine et documente automatiquement le problème.
+
+**3. Pourquoi ne faut-il pas écrire de secrets dans le code ?**  
+Les fichiers de code sont versionnés dans Git. Un secret commité peut être exposé publiquement, même supprimé ensuite — l'historique Git le conserve. Les secrets doivent passer par des Variables Airflow ou un gestionnaire de secrets (Azure Key Vault).
+
+**4. Quelle est la différence entre un test dbt et un rapport qualité ?**  
+Un test dbt est une assertion technique binaire (passe / échoue). Un rapport qualité est une mesure métier lisible, exportable et archivable, qui peut exprimer des nuances (nombre de lignes, taux de complétion).
+
+**5. En quoi ces tâches améliorent-elles l'observabilité du pipeline ?**  
+Elles produisent des artefacts (fichiers `.txt`) qui survivent à l'exécution et permettent d'auditer l'état des données à un instant donné sans rejouer le pipeline.
+
+---
+
+## Nettoyage (éviter les coûts Azure)
+
+> **Cloud Shell Azure**, dans le dossier `tp6-airflow-azure/`
+
+```bash
+terraform destroy
+```
+
+Confirmer avec `yes`.
+
+---
+
+## Concepts clés
+
+| Concept | Description |
+|---|---|
+| **Terraform IaC** | Infrastructure définie en code versionnable — VM, réseau, NSG, Storage |
+| **cloud-init** | Script exécuté au premier démarrage de la VM — installe Docker, Python et dbt automatiquement |
+| **NSG** | Pare-feu Azure au niveau du subnet — autorise uniquement SSH et le port 8080 depuis l'IP configurée |
+| **Clé SSH (Cloud Shell)** | La clé privée reste dans le Cloud Shell ; seule la clé publique est transmise à Azure |
+| **Variable Airflow** | Stockage sécurisé de secrets dans Airflow — évite d'écrire la chaîne de connexion en clair |
+| **Schedule Airflow** | Expression cron (`0 */6 * * *` = toutes les 6 heures) |
+| **Rapport qualité** | Artefact lisible mesurant le volume et la complétude des données après chaque exécution |
+| **Contrôle sécurité** | Scan automatique des fichiers du projet pour détecter des secrets potentiels |
+
+---
+
+## Conclusion
+
+Ce projet construit un pipeline DataOps professionnel en conditions réelles, en deux phases :
+
+**TP5 — Infrastructure et ingestion :**
+```
+upload_blob → load_sqlite → dbt_run → dbt_test
+```
+
+**TP6 — Observabilité et sécurité :**
+```
+upload_blob → load_sqlite → dbt_run → dbt_test
+    → generate_quality_report → check_quality_status → security_check
+```
+
+Le pipeline ne se contente plus de s'exécuter. Il **produit une preuve lisible de son état**, **vérifie automatiquement la qualité des données** et **contrôle l'absence de secrets dans le projet**.
+
+C'est la logique DataOps complète : **automatiser, tester, observer et sécuriser**.
