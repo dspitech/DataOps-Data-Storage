@@ -16,6 +16,7 @@ Ce repository regroupe l'ensemble de travaux pratiques du cours DataOps. Chaque 
 | TP 5 | Orchestration Airflow | Apache Airflow + Docker | Orchestrer avec un outil professionnel et une interface de monitoring |
 | TP 6 | Orchestration Airflow (Azure) | Apache Airflow + Docker + Terraform + Azure | Orchestrer avec un outil professionnel et une interface de monitoring dans Microsoft Azure |
 | TP 7 | Orchestration Airflow (Azure)| Apache Airflow + Docker + Terraform + Azure | Orchestrer avec un outil professionnel et une interface de monitoring dans Microsoft Azure + déploiement automatisé |
+| TP 8 | Orchestration Airflow | Apache Airflow + Docker + Terraform + Azure | Projet final |
 
 
 ---
@@ -3704,11 +3705,6 @@ Password : DataOps2026!
 > Le DAG `dataops_pipeline` est déjà activé et son premier run est en cours ou terminé.
 
 ![image](https://hackmd.io/_uploads/H1-G2T0gzx.png)
-![image](https://hackmd.io/_uploads/BJm4haClMg.png)
-![image](https://hackmd.io/_uploads/S16836ClMx.png)
-![image](https://hackmd.io/_uploads/ByhPn6Cgzg.png)
-![image](https://hackmd.io/_uploads/H1IF3pRgzl.png)
-![image](https://hackmd.io/_uploads/HJSMa6Alzx.png)
 
 ---
 
@@ -3954,13 +3950,7 @@ rm ~/.ssh/id_rsa_tp6 ~/.ssh/id_rsa_tp6.pub
 
 ---
 
-# Projet DataOps - Orchestration Airflow sur Azure VM Linux
-
-### Nom : Lo
-### Prénom : Pape
-### Cours : DataOps
-### Année : 2025 - 2026
-### Prof : Arij AZZABI
+# TP - 8 : Projet Final DataOps - Orchestration Airflow sur Azure VM Linux
 
 ---
 
