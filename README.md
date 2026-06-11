@@ -6115,21 +6115,6 @@ Confirmer avec `yes`.
 
 ---
 
-## Concepts clés
-
-| Concept | Description |
-|---|---|
-| **Terraform IaC** | Infrastructure définie en code versionnable — VM, réseau, NSG, Storage |
-| **cloud-init** | Script exécuté au premier démarrage de la VM — installe Docker, Python et dbt automatiquement |
-| **NSG** | Pare-feu Azure au niveau du subnet - autorise uniquement SSH et le port 8080 depuis l'IP configurée |
-| **Clé SSH (Cloud Shell)** | La clé privée reste dans le Cloud Shell ; seule la clé publique est transmise à Azure |
-| **Variable Airflow** | Stockage sécurisé de secrets dans Airflow — évite d'écrire la chaîne de connexion en clair |
-| **Schedule Airflow** | Expression cron (`0 */6 * * *` = toutes les 6 heures) |
-| **Rapport qualité** | Artefact lisible mesurant le volume et la complétude des données après chaque exécution |
-| **Contrôle sécurité** | Scan automatique des fichiers du projet pour détecter des secrets potentiels |
-
----
-
 ## Conclusion
 
 Le pipeline ne se contente plus de s'exécuter. Il **produit une preuve lisible de son état**, **vérifie automatiquement la qualité des données** et **contrôle l'absence de secrets dans le projet**.
