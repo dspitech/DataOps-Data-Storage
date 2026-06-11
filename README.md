@@ -6084,7 +6084,7 @@ docker compose logs airflow-scheduler --tail=30
 
 ---
 
-## Questions de recul
+## Questions
 
 **1. Pourquoi générer un rapport qualité après `dbt test` ?**  
 `dbt test` vérifie les contraintes du modèle (unicité, non-null). Le rapport qualité mesure l'état réel des données (volume, complétude) et produit une preuve lisible et archivable de l'exécution.
@@ -6093,7 +6093,7 @@ docker compose logs airflow-scheduler --tail=30
 Un pipeline silencieux qui absorbe les erreurs est dangereux en production. L'échec visible force une intervention humaine et documente automatiquement le problème.
 
 **3. Pourquoi ne faut-il pas écrire de secrets dans le code ?**  
-Les fichiers de code sont versionnés dans Git. Un secret commité peut être exposé publiquement, même supprimé ensuite — l'historique Git le conserve. Les secrets doivent passer par des Variables Airflow ou un gestionnaire de secrets (Azure Key Vault).
+Les fichiers de code sont versionnés dans Git. Un secret commité peut être exposé publiquement, même supprimé ensuite - l'historique Git le conserve. Les secrets doivent passer par des Variables Airflow ou un gestionnaire de secrets (Azure Key Vault).
 
 **4. Quelle est la différence entre un test dbt et un rapport qualité ?**  
 Un test dbt est une assertion technique binaire (passe / échoue). Un rapport qualité est une mesure métier lisible, exportable et archivable, qui peut exprimer des nuances (nombre de lignes, taux de complétion).
