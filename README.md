@@ -7,17 +7,16 @@
 
 Ce repository regroupe l'ensemble de travaux pratiques du cours DataOps. Chaque TP construit une brique supplémentaire d'un pipeline de données complet, du stockage brut jusqu'à l'orchestration professionnelle.
 
-| TP | Titre | Technologie principale | Objectif |
-|---|---|---|---|
-| TP 1 | Azurite Blob Storage | Python + Azurite | Stocker des fichiers JSON dans un émulateur Azure Blob |
-| TP 2 | Blob vers SQL | Python + SQLite | Charger les blobs dans une base de données relationnelle |
-| TP 3 | dbt Analytics Engineering | dbt + SQLite | Transformer et tester les données avec dbt |
-| TP 4 | Orchestration locale | Python (subprocess) | Automatiser le pipeline avec un script orchestrateur |
-| TP 5 | Orchestration Airflow | Apache Airflow + Docker | Orchestrer avec un outil professionnel et une interface de monitoring |
-| TP 6 | Orchestration Airflow (Azure) | Apache Airflow + Docker + Terraform + Azure | Orchestrer avec un outil professionnel et une interface de monitoring dans Microsoft Azure |
-| TP 7 | Orchestration Airflow (Azure)| Apache Airflow + Docker + Terraform + Azure | Orchestrer avec un outil professionnel et une interface de monitoring dans Microsoft Azure + déploiement automatisé |
-| TP 8 | Orchestration Airflow | Apache Airflow + Docker + Terraform + Azure | Projet final (Ajout d'autres fonctionnalités et captures à venir) |
-
+| TP   | Titre                                               | Technologies principales                         | Objectif pédagogique |
+|------|----------------------------------------------------|-------------------------------------------------|----------------------|
+| TP 1 | Stockage de données avec Azurite                  | Python, Azurite (Azure Blob Storage emulator)   | Manipuler un stockage objet et lire/écrire des fichiers JSON dans un environnement simulant Azure Blob Storage |
+| TP 2 | Chargement des données vers une base SQL          | Python, SQLite                                  | Extraire des données depuis des blobs et les charger dans une base relationnelle |
+| TP 3 | Analytics Engineering avec dbt                    | dbt, SQLite                                     | Transformer, modéliser et tester des données de manière industrialisée avec dbt |
+| TP 4 | Orchestration locale d’un pipeline de données     | Python (subprocess, scripts)                    | Automatiser l’exécution complète du pipeline (ingestion → transformation) en local |
+| TP 5 | Orchestration avec Apache Airflow (local)         | Apache Airflow, Docker                          | Mettre en place un orchestrateur de data pipeline avec DAGs et interface de monitoring |
+| TP 6 | Déploiement Airflow sur Azure                     | Apache Airflow, Docker, Terraform, Azure        | Déployer une infrastructure Airflow sur le cloud avec Infrastructure as Code (Terraform) |
+| TP 7 | Industrialisation du pipeline sur Azure           | Apache Airflow, Docker, Terraform, Azure        | Adapter et exécuter le pipeline complet dans un environnement cloud |
+| TP 8 | Pipeline end-to-end en environnement cloud        | Apache Airflow, Docker, Terraform, Azure        | Consolider les acquis en déployant et supervisant un pipeline de données complet sur Azure |
 
 ---
 
@@ -4098,21 +4097,699 @@ Dans ce TP, vous avez construit un pipeline DataOps professionnel en conditions 
 
 ---
 
+# TP-7 DataOps - Airflow, rapport qualité et contrôle sécurité
 
+## Description
+
+Le TP-7 est un projet final du cours **DataOps & Data Storage**  qui consiste à enrichir un pipeline Airflow existant pour le rendre non seulement fonctionnel, mais aussi **observable, contrôlé et sécurisé**.
+
+En partant d'un DAG Airflow déjà construit lors des TP précédents - qui orchestrait simplement `dbt run` puis `dbt test` sur une base SQLite alimentée depuis Azurite - l'objectif est d'y ajouter trois nouvelles étapes. La première, obligatoire, génère automatiquement un **rapport qualité** en interrogeant la table `stg_blob_files` : elle compte le nombre de lignes, détecte les messages vides ou NULL, et produit un fichier texte lisible avec un statut global `OK` ou `WARNING`. La deuxième tâche lit ce rapport et **fait échouer volontairement le pipeline** si le statut est `WARNING`, forçant ainsi une prise en charge explicite des anomalies détectées. La troisième, en bonus sécurité, **scanne les fichiers du projet** à la recherche de mots-clés sensibles comme `password`, `token` ou `connection_string`, et fait également échouer le pipeline si un secret potentiel est trouvé.
+
+Au final, le pipeline complet suit la chaîne `dbt_run → dbt_test → generate_quality_report → check_quality_status → security_check`, et produit deux fichiers de rapport : `reports/quality_report.txt` et `reports/security_report.txt`. Ce TP illustre concrètement les principes DataOps : **automatiser les contrôles, rendre les données observables et protéger le projet contre les mauvaises pratiques de sécurité**.
 
 ---
 
-# TP - 8 : Projet Final DataOps - Orchestration Airflow sur Azure VM Linux
+## Objectif du projet final
+
+Dans le TP5, vous avez construit un DAG Airflow qui orchestre :
+
+```
+dbt_run -> dbt_test
+```
+
+Dans ce projet final, vous allez enrichir ce pipeline avec :
+
+- une tâche de **rapport qualité** ;
+- une tâche de **vérification du statut qualité** ;
+- une tâche **bonus sécurité** pour détecter les secrets potentiels.
+
+```
+1. dbt_run  →  2. dbt_test  →  3. generate quality report  →  4. check quality status  →  5. security check
+```
+
+> Le but n'est pas seulement d'exécuter un pipeline. Le but est de produire un pipeline **observable, contrôlé et plus sûr**.
+
+---
+
+## 1. Contexte
+
+Le pipeline construit dans les TP précédents contient déjà :
+
+- une zone `raw` avec Azurite ;
+- une base SQLite ;
+- une table staging ;
+- un projet dbt ;
+- un DAG Airflow ;
+- une exécution `dbt run` ;
+- une exécution `dbt test`.
+
+Mais dans une logique DataOps, il faut aller plus loin.
+
+Un pipeline professionnel doit pouvoir répondre à trois questions :
+
+1. Est-ce que le pipeline s'est bien exécuté ?
+2. Est-ce que les données produites sont contrôlables ?
+3. Est-ce que le projet évite d'exposer des secrets ?
+
+> **Idée** : Un pipeline DataOps ne doit pas seulement être fonctionnel. Il doit être **observable, vérifiable et sécurisé**.
+
+---
+
+## 2. Travail demandé
+
+Vous devez modifier le DAG Airflow existant pour obtenir le pipeline suivant :
+
+```
+dbt_run  →  dbt_test  →  generate quality report  →  check quality status  →  security check
+```
+
+Le projet final comporte :
+
+- une **partie obligatoire** : génération d'un rapport qualité ;
+- une **partie bonus qualité** : vérification automatique du statut du rapport ;
+- une **partie bonus sécurité** : détection de secrets potentiels dans le projet.
+
+---
+
+## 3. Partie obligatoire - Générer un rapport qualité
+
+### 3.1. Objectif
+
+Ajouter une tâche Airflow appelée `generate_quality_report`.
+
+Cette tâche doit :
+
+1. lire la base SQLite `database/dataops.db` ;
+2. lire la table `stg_blob_files` ;
+3. compter le nombre total de lignes ;
+4. compter les messages vides ou NULL ;
+5. créer un dossier `reports` si nécessaire ;
+6. générer le fichier `reports/quality_report.txt` ;
+7. afficher le rapport dans les logs Airflow.
+
+### 3.2. Script à créer
+
+Créer le fichier : `scripts/generate_quality_report.py` et ajouter son contenu.
+
+```powershell
+@'
+import sqlite3
+from pathlib import Path
+from datetime import datetime
+
+DATABASE_PATH = Path("database/dataops.db")
+REPORT_DIR = Path("reports")
+REPORT_PATH = REPORT_DIR / "quality_report.txt"
+
+def generate_report():
+    REPORT_DIR.mkdir(exist_ok=True)
+
+    if not DATABASE_PATH.exists():
+        raise FileNotFoundError(f"Base introuvable : {DATABASE_PATH}")
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM stg_blob_files")
+    row_count = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*)
+        FROM stg_blob_files
+        WHERE message IS NULL OR message = ''
+    """)
+    empty_messages = cursor.fetchone()[0]
+
+    conn.close()
+
+    status = "OK" if row_count > 0 and empty_messages == 0 else "WARNING"
+
+    report = f"""
+DATAOPS QUALITY REPORT
+======================
+Date execution : {datetime.now()}
+Base SQLite : {DATABASE_PATH}
+Table controlee : stg_blob_files
+Nombre de lignes : {row_count}
+Messages vides ou NULL : {empty_messages}
+Statut global : {status}
+"""
+
+    REPORT_PATH.write_text(report, encoding="utf-8")
+    print(report)
+    print(f"Rapport genere : {REPORT_PATH}")
+
+if __name__ == "__main__":
+    generate_report()
+'@ | Set-Content -Path scripts\generate_quality_report.py -Encoding UTF8
+```
+![image](https://hackmd.io/_uploads/rkxVoEuWMl.png)
+![image](https://hackmd.io/_uploads/rkZvjVubMg.png)
+
+> **Remarque :** Les sorties terminal utilisent volontairement certains messages sans accents (ex. `Rapport genere`) pour éviter des problèmes d'affichage dans certains environnements Windows ou Docker.
+
+### 3.3. Modifier le DAG Airflow
+
+Dans le fichier `airflow/dags/dataops_pipeline_dag.py`, ajouter la tâche suivante après `dbt_test` :
+
+```python
+generate_quality_report = BashOperator(
+    task_id="generate_quality_report",
+    bash_command=(
+        f"cd {PROJECT_DIR} && "
+        "python scripts/generate_quality_report.py"
+    ),
+)
+```
+![image](https://hackmd.io/_uploads/BJ81n4_-Ml.png)
+
+
+Puis modifier l'ordre des tâches :
+
+```python
+dbt_run >> dbt_test >> generate_quality_report
+```
+![image](https://hackmd.io/_uploads/S1sx34dbze.png)
+
+---
+
+## 4. Partie bonus qualité - Vérifier automatiquement le statut
+
+### 4.1. Objectif
+
+Ajouter une tâche Airflow appelée `check_quality_status`.
+
+Cette tâche doit lire le rapport qualité et vérifier si le statut global est `OK` ou `WARNING`.
+
+Si le rapport contient `WARNING`, la tâche doit **échouer volontairement**. Cela permet à Airflow de signaler clairement qu'un problème de qualité doit être traité.
+
+### 4.2. Script bonus qualité
+
+Créer le fichier : `scripts/check_quality_status.py`
+
+```powershell
+@'
+from pathlib import Path
+
+REPORT_PATH = Path("reports/quality_report.txt")
+
+def check_report():
+    if not REPORT_PATH.exists():
+        raise FileNotFoundError(f"Rapport introuvable : {REPORT_PATH}")
+
+    content = REPORT_PATH.read_text(encoding="utf-8")
+    print("Lecture du rapport qualite...")
+    print(content)
+
+    if "WARNING" in content:
+        raise ValueError(
+            "Statut WARNING detecte dans le rapport qualite."
+        )
+
+    print("Statut qualite OK.")
+
+if __name__ == "__main__":
+    check_report()
+'@ | Set-Content -Path scripts\check_quality_status.py -Encoding UTF8
+```
+![image](https://hackmd.io/_uploads/BJT_24dZMl.png)
+
+### 4.3. Modifier le DAG
+
+Ajouter la tâche suivante :
+
+```python
+check_quality_status = BashOperator(
+    task_id="check_quality_status",
+    bash_command=(
+        f"cd {PROJECT_DIR} && "
+        "python scripts/check_quality_status.py"
+    ),
+)
+```
+![image](https://hackmd.io/_uploads/BJLqnEubfx.png)
+
+Puis modifier l'ordre des tâches :
+
+```python
+dbt_run >> dbt_test >> generate_quality_report >> check_quality_status
+```
+![image](https://hackmd.io/_uploads/S1csh4_Wzg.png)
+
+---
+
+## 5. Partie bonus sécurité – Vérifier l'absence de secrets
+
+### 5.1. Objectif sécurité
+
+Dans un pipeline DataOps, il ne suffit pas de produire des données fiables. Il faut aussi éviter d'exposer des informations sensibles dans le code, les fichiers de configuration ou les rapports.
+
+Ajouter une tâche Airflow appelée `security_check`.
+
+Cette tâche doit :
+
+1. parcourir certains fichiers du projet ;
+2. chercher des mots-clés sensibles ;
+3. ignorer les dossiers techniques inutiles ;
+4. afficher un rapport dans les logs Airflow ;
+5. générer le fichier `reports/security_report.txt` ;
+6. échouer si un secret potentiel est détecté.
+
+> Un secret ne doit **jamais** être écrit directement dans le code source.
+
+Exemples à éviter :
+
+```python
+password = "admin123"
+token = "abc123"
+AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=..."
+```
+
+### 5.2. Script sécurité à créer
+
+Créer le fichier : `scripts/security_check.py`
+
+```powershell
+@'
+from pathlib import Path
+
+PROJECT_ROOT = Path(".")
+REPORT_DIR = Path("reports")
+REPORT_PATH = REPORT_DIR / "security_report.txt"
+
+SENSITIVE_KEYWORDS = [
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "access_key",
+    "connection_string",
+    "DefaultEndpointsProtocol",
+    "AccountKey",
+]
+
+IGNORED_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "logs",
+    "target",
+    "dbt_packages",
+}
+
+CHECKED_EXTENSIONS = {
+    ".py",
+    ".yml",
+    ".yaml",
+    ".env",
+    ".txt",
+    ".json",
+}
+
+def should_ignore(path):
+    return any(part in IGNORED_DIRS for part in path.parts)
+
+def should_check(path):
+    if should_ignore(path):
+        return False
+    if path.name == ".env":
+        return True
+    return path.suffix.lower() in CHECKED_EXTENSIONS
+
+def scan_file(path):
+    findings = []
+    try:
+        content = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return findings
+
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        lowered = line.lower()
+        for keyword in SENSITIVE_KEYWORDS:
+            if keyword.lower() in lowered:
+                findings.append(
+                    f"{path}:{line_number} -> mot-cle detecte : {keyword}"
+                )
+    return findings
+
+def run_security_check():
+    REPORT_DIR.mkdir(exist_ok=True)
+    all_findings = []
+
+    for path in PROJECT_ROOT.rglob("*"):
+        if path.is_file() and should_check(path):
+            all_findings.extend(scan_file(path))
+
+    status = "WARNING" if all_findings else "OK"
+
+    report_lines = [
+        "DATAOPS SECURITY REPORT",
+        "=======================",
+        "",
+        f"Statut global : {status}",
+        "",
+        "Resultats :",
+    ]
+
+    if all_findings:
+        report_lines.extend(all_findings)
+    else:
+        report_lines.append("Aucun secret potentiel detecte.")
+
+    report = "\n".join(report_lines)
+    REPORT_PATH.write_text(report, encoding="utf-8")
+    print(report)
+    print(f"Rapport securite genere : {REPORT_PATH}")
+
+    if all_findings:
+        raise ValueError(
+            "Secrets potentiels detectes dans le projet."
+        )
+
+if __name__ == "__main__":
+    run_security_check()
+'@ | Set-Content -Path scripts\security_check.py -Encoding UTF8
+```
+![image](https://hackmd.io/_uploads/Hydrp4ubGg.png)
+
+> **Remarque :** Ce script n'est pas un scanner de sécurité professionnel. Il sert à introduire une bonne pratique : vérifier automatiquement qu'aucun secret évident n'est présent dans le projet.
+
+### 5.3. Modifier le DAG Airflow
+
+Ajouter la tâche suivante après `check_quality_status` :
+
+```python
+security_check = BashOperator(
+    task_id="security_check",
+    bash_command=(
+        f"cd {PROJECT_DIR} && "
+        "python scripts/security_check.py"
+    ),
+)
+```
+![image](https://hackmd.io/_uploads/BkoPT4Obzl.png)
+
+Puis modifier l'ordre final :
+
+```python
+dbt_run >> dbt_test >> generate_quality_report >> check_quality_status >> security_check
+```
+![image](https://hackmd.io/_uploads/BJt_pEOZMl.png)
+
+---
+
+## 6. DAG complet attendu
+
+```python
+from datetime import datetime
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+
+PROJECT_DIR = "/opt/airflow/project"
+
+with DAG(
+    dag_id="dataops_pipeline",
+    start_date=datetime(2026, 1, 1),
+    schedule=None,
+    catchup=False,
+    tags=["dataops", "dbt", "airflow"],
+) as dag:
+
+    dbt_run = BashOperator(
+        task_id="dbt_run",
+        bash_command=(
+            f"cd {PROJECT_DIR} && "
+            "dbt run --project-dir dataops_dbt "
+            "--profiles-dir /opt/airflow/project/.dbt"
+        ),
+    )
+
+    dbt_test = BashOperator(
+        task_id="dbt_test",
+        bash_command=(
+            f"cd {PROJECT_DIR} && "
+            "dbt test --project-dir dataops_dbt "
+            "--profiles-dir /opt/airflow/project/.dbt"
+        ),
+    )
+
+    generate_quality_report = BashOperator(
+        task_id="generate_quality_report",
+        bash_command=(
+            f"cd {PROJECT_DIR} && "
+            "python scripts/generate_quality_report.py"
+        ),
+    )
+
+    check_quality_status = BashOperator(
+        task_id="check_quality_status",
+        bash_command=(
+            f"cd {PROJECT_DIR} && "
+            "python scripts/check_quality_status.py"
+        ),
+    )
+
+    security_check = BashOperator(
+        task_id="security_check",
+        bash_command=(
+            f"cd {PROJECT_DIR} && "
+            "python scripts/security_check.py"
+        ),
+    )
+
+    dbt_run >> dbt_test >> generate_quality_report >> check_quality_status >> security_check
+```
+
+---
+
+## 7. Résultat attendu
+
+Dans Airflow, vous devez voir le DAG avec les tâches suivantes :
+
+```
+dbt_run  →  dbt_test  →  generate_quality_report  →  check_quality_status  →  security_check
+```
+![image](https://hackmd.io/_uploads/Sy-bR4dZMx.png)
+
+- Déclencher le pipeline
+![image](https://hackmd.io/_uploads/SyUBA4ubMx.png)
+
+Résultat final : 
+
+![image](https://hackmd.io/_uploads/HypbGBdWGl.png)
+![image](https://hackmd.io/_uploads/BJ4Qfr_ZGx.png)
+![image](https://hackmd.io/_uploads/SyGFfBd-Mx.png)
+
+
+## Résultat de la vérification de sécurité
+
+Le script de contrôle de sécurité a fonctionné correctement. Il a analysé les fichiers du projet et détecté la présence de mots-clés considérés comme sensibles. Conformément à la logique définie dans le TP, la tâche a volontairement échoué afin de signaler ces éléments et d'empêcher la poursuite du pipeline.
+
+### Mots-clés détectés
+
+#### Dans `scripts/security_check.py`
+
+- `AccountKey` - ligne 17 (présent dans la liste `SENSITIVE_KEYWORDS`)
+- `secret` - ligne 87
+- `secret` - ligne 96
+
+#### Dans `scripts/upload_blob.py`
+
+- `connection_string` - détecté à plusieurs reprises dans le fichier
+
+### Analyse
+
+La détection de `connection_string` est cohérente avec l'utilisation d'Azurite ou d'un compte Azure Storage, où une chaîne de connexion est généralement utilisée pour l'authentification. Le script identifie ce type d'information comme potentiellement sensible afin d'éviter l'exposition accidentelle de secrets ou de clés d'accès dans le code source.
+
+### Résumé
+
+Le contrôle de sécurité remplit correctement son rôle en identifiant les informations potentiellement sensibles présentes dans le projet. L'échec de la tâche est donc attendu et démontre le bon fonctionnement du mécanisme de validation de sécurité intégré au pipeline DataOps.
+
+## Fichiers rapports
+Les fichiers suivants doivent être générés :
+
+```
+reports/quality_report.txt
+reports/security_report.txt
+```
+![image](https://hackmd.io/_uploads/BJGamr_Zfg.png)
+
+### Exemple de rapport qualité
+
+```
+DATAOPS QUALITY REPORT
+======================
+Base SQLite : database/dataops.db
+Table controlee : stg_blob_files
+Nombre de lignes : 3
+Messages vides ou NULL : 0
+Statut global : OK
+```
+![image](https://hackmd.io/_uploads/ryml4Bu-Me.png)
+
+### Exemple de rapport sécurité
+
+```
+DATAOPS SECURITY REPORT
+=======================
+Statut global : OK
+
+Resultats :
+Aucun secret potentiel detecte.
+```
+![image](https://hackmd.io/_uploads/HJIZES_-Gl.png)
+
+---
+ 
+## 8. Corriger la tâche `security_check`
+
+Le script a détecté des mots-clés sensibles dans vos fichiers et a **volontairement fait échouer la tâche**, comme prévu dans le TP. Pour corriger cela, deux options s'offrent à vous.
+
+---
+
+### Option 1 - Ajouter `scripts` aux dossiers ignorés *(solution rapide pour le cours)*
+
+Dans `scripts/security_check.py`, modifier le set `IGNORED_DIRS` en ajoutant `"scripts"` :
+
+```python
+IGNORED_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "logs",
+    "target",
+    "dbt_packages",
+    "scripts",  # <-- ajouter cette ligne
+}
+```
+![image](https://hackmd.io/_uploads/r1xREHdZzl.png)
+
+A faire :
+
+```powershell
+docker compose down
+docker compose up -d
+```
+
+**Ce que ça fait :** le scanner ignorera complètement le dossier `scripts/` lors de son analyse, y compris `security_check.py` lui-même (qui contient les mots-clés dans sa liste) et `upload_blob.py`.
+
+**Limite :** ce n'est pas une vraie correction de sécurité, on dit juste au scanner de ne pas regarder dans ce dossier.
+
+---
+
+### Option 2 - Déplacer les secrets dans un fichier `.env` *(bonne pratique DataOps)*
+
+C'est la **solution recommandée** par le TP. Elle consiste à ne jamais écrire de valeurs sensibles directement dans le code.
+
+#### Étape 1 - Créer un fichier `.env` à la racine du projet
+
+```ini
+AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8...;BlobEndpoint=http://azurite:10000/devstoreaccount1;
+```
+
+#### Étape 2 — Modifier `scripts/upload_blob.py` pour lire la variable d'environnement
+
+```python
+import os
+
+# Avant (à supprimer) :
+# connection_string = "DefaultEndpointsProtocol=http;AccountName=..."
+
+# Après (bonne pratique) :
+connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+
+if not connection_string:
+    raise ValueError("La variable AZURE_STORAGE_CONNECTION_STRING n'est pas définie.")
+```
+
+#### Étape 3 - Ajouter `.env` dans `.gitignore`
+
+```bash
+.env
+```
+
+> Cela évite que le fichier `.env` soit accidentellement versionné et exposé sur GitHub.
+
+#### Étape 4 - Ajouter `.env` dans les fichiers ignorés du scanner
+
+Dans `security_check.py`, exclure le fichier `.env` de l'analyse puisqu'il est déjà protégé par `.gitignore` :
+
+```python
+IGNORED_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "logs",
+    "target",
+    "dbt_packages",
+}
+
+# Modifier should_check pour ignorer .env
+def should_check(path):
+    if should_ignore(path):
+        return False
+    if path.name == ".env":
+        return False  # <-- ne pas scanner le fichier .env
+    return path.suffix.lower() in CHECKED_EXTENSIONS
+```
+
+---
+
+### Résumé
+
+| | Option 1 | Option 2 |
+|---|---|---|
+| Difficulté | Facile | Modérée |
+| Sécurité réelle | ❌ Non | ✅ Oui |
+| Bonne pratique DataOps | ❌ Non | ✅ Oui |
+| Recommandée pour le cours | Pour aller vite | Pour la note |
+
+---
+
+## 9. Questions de recul
+
+1. Pourquoi générer un rapport qualité après `dbt test` ?
+2. Pourquoi faire échouer une tâche Airflow en cas de statut `WARNING` ?
+3. Pourquoi ne faut-il pas écrire de secrets dans le code ?
+4. Quelle est la différence entre un test dbt et un rapport qualité ?
+5. En quoi ces tâches améliorent-elles l'observabilité du pipeline ?
+
+---
+
+## 10. Conclusion
+
+Dans ce projet final, vous avez enrichi votre pipeline Airflow.
+
+Vous êtes passés de :
+
+```
+dbt_run -> dbt_test
+```
+
+à :
+
+```
+dbt_run -> dbt_test -> generate_quality_report -> check_quality_status -> security_check
+```
+
+Le pipeline ne se contente plus de s'exécuter. Il produit une **preuve lisible de son état**, vérifie son **statut qualité** et ajoute un premier **contrôle sécurité**.
+
+C'est une vraie logique DataOps : **automatiser, tester, observer et sécuriser**.
+
+---
+
+# TP - 8 (Suite TP 7) : Projet Final DataOps - Orchestration Airflow sur Azure VM Linux
 
 ---
 
 ## Description
 
-Ce projet met en place un pipeline DataOps complet déployé sur une infrastructure cloud Azure provisionnée entièrement en code avec Terraform. Une machine virtuelle Linux Ubuntu est créée automatiquement via cloud-init, sur laquelle Apache Airflow est déployé avec Docker Compose.
-
-Le pipeline orchestre sept tâches enchaînées : les données sont d'abord uploadées vers Azure Blob Storage, chargées dans une base SQLite, transformées et testées avec dbt, puis soumises à un contrôle qualité automatique qui génère un rapport lisible et fait échouer le pipeline en cas d'anomalie. Une dernière tâche de sécurité scanne les fichiers du projet pour détecter la présence de secrets potentiels écrits en clair dans le code.
-
-L'objectif est de produire un pipeline non seulement fonctionnel, mais observable, contrôlé et sécurisé  conformément aux bonnes pratiques DataOps.
+Ce TP - 8 reprend le TP-7 mais dans Azure. 
 
 ---
 
@@ -5307,9 +5984,11 @@ upload_blob → load_sqlite → dbt_run → dbt_test
     → generate_quality_report → check_quality_status → security_check
 ```
 
-![image](https://hackmd.io/_uploads/rJXDV3Lbfg.png)
+![image](https://hackmd.io/_uploads/HypbGBdWGl.png)
+![image](https://hackmd.io/_uploads/BJ4Qfr_ZGx.png)
+![image](https://hackmd.io/_uploads/SyGFfBd-Mx.png)
 
-D'autres captures à venir >
+
 
 ### Lire les rapports générés
 
@@ -5319,7 +5998,6 @@ cat /home/dataops_admin/dataops-project/reports/quality_report.txt
 cat /home/dataops_admin/dataops-project/reports/security_report.txt
 ```
 
-D'autres captures à venir >
 
 ### Exemples de rapports attendus
 
