@@ -323,10 +323,7 @@ Une fois Azurite démarré, votre application peut utiliser cette connexion loca
 Dans PowerShell, créer la structure de dossiers :
 
 ```powershell
-mkdir TP-AZURE-BLOB
-cd TP-AZURE-BLOB
-mkdir data
-mkdir scripts
+mkdir TP-AZURE-BLOB; cd TP-AZURE-BLOB; mkdir data, scripts
 ```
 
 Structure obtenue :
@@ -341,6 +338,52 @@ TP-AZURE-BLOB/
 
 ### Étape 5 – Installer la librairie Python Azure Blob
 
+## La librairie Python Azure Blob : qu'est-ce que c'est ?
+
+La librairie **Azure Blob Storage pour Python** permet aux applications Python d'interagir avec le service Azure Blob Storage.
+
+Elle fait partie du SDK Azure pour Python et fournit des fonctionnalités pour :
+
+- Créer des conteneurs (containers)
+- Téléverser des fichiers (upload)
+- Télécharger des fichiers (download)
+- Lister les blobs
+- Supprimer des blobs
+- Gérer les métadonnées et les permissions
+
+
+### Pourquoi utiliser cette librairie en local ?
+
+Même si Azure Blob Storage est un service cloud, la librairie peut être utilisée avec **Azurite**, l'émulateur local d'Azure Storage.
+
+Cela permet de développer et tester une application sans utiliser un véritable compte Azure.
+
+### Avantages
+
+### Développement sans coût
+
+Les opérations de stockage sont exécutées localement :
+
+```text
+Application Python
+        ↓
+    Azurite
+        ↓
+ Stockage local
+```
+
+Aucune ressource Azure n'est consommée.
+
+### Tests rapides
+
+Les données sont stockées sur la machine du développeur, ce qui réduit les temps de réponse et permet de travailler même sans connexion Internet.
+
+
+### Résumé
+
+La librairie **azure-storage-blob** permet à une application Python de communiquer avec Azure Blob Storage. Utilisée avec **Azurite**, elle offre un environnement de développement et de test local gratuit, rapide et compatible avec le code qui sera utilisé en production sur Azure.
+
+#### Installation
 ```powershell
 py -m pip install azure-storage-blob
 ```
@@ -403,7 +446,7 @@ Contenu du script :
 
 ```python
 import os
-from pathlib import import Path
+from pathlib import Path
 from azure.storage.blob import BlobServiceClient
 
 CONTAINER_NAME = "raw"
@@ -449,6 +492,10 @@ if __name__ == "__main__":
 ### Étape 9 : Exécuter le script
 
 ```powershell
+# Lancer Azurite en mode compatibilité
+azurite --skipApiVersionCheck
+
+# Exécuter le scipt
 py scripts/upload_blob.py
 ```
 
@@ -459,6 +506,13 @@ Upload réussi : test/test.json
 ```
 ![image](https://hackmd.io/_uploads/B1lLrwNlzl.png)
 
+### Résumé du script
+- Ce script se connecte à Azure Blob Storage en utilisant une chaîne de connexion stockée dans une variable d’environnement.
+- Il crée (ou vérifie l’existence) d’un container nommé `raw`.
+- Il lit un fichier local `data/test.json`.
+- Il upload ce fichier dans le container sous le nom `test/test.json`.
+- Enfin, il affiche un message confirmant la réussite de l’envoi.
+  
 ---
 
 ### Étape 10 : Vérifier dans Azurite
@@ -482,13 +536,23 @@ Le fichier JSON est bien présent dans le container `raw`.
 
 ### Étape 11 : Structurer le Data Lake
 
-Organiser les fichiers avec une structure partitionnée par date, comme dans un vrai Data Lake :
+Organiser les fichiers avec une structure partitionnée par date, comme dans un vrai Data Lake.
+
+###  Objectif principal
+
+Rendre les données :
+
+- plus faciles à retrouver
+- plus rapides à traiter
+- plus simples à mainteni
 
 ```powershell
+# Modifie le script Python en remplaçant le nom du blob pour ajouter une structure de type Data Lake (partition par date)
 (Get-Content scripts/upload_blob.py) `
   -replace 'BLOB_NAME = "test/test.json"', 'BLOB_NAME = "bitcoin/year=2026/month=05/day=10/test.json"' `
   | Set-Content scripts/upload_blob.py
 
+# Exécute le script Python pour uploader le fichier dans Azure Blob Storage (ou Azurite en local)
 py scripts/upload_blob.py
 ```
 
@@ -514,17 +578,97 @@ raw/
 
 ### Étape 12 : Historiser les fichiers
 
-Créer un second fichier JSON avec un contenu différent et l'uploader sous un nom différent :
+####  Pourquoi historiser les fichiers ?
+
+Historiser les fichiers consiste à conserver plusieurs versions d’un même type de données au lieu d’écraser les anciennes.
+
+---
+
+####  Objectif
+
+Garder une trace des données dans le temps.
+
+---
+
+####  Pourquoi c’est important ?
+
+####  1. Suivre l’évolution des données
+
+On peut comparer différentes versions :
+
+- avant / après un traitement
+- jour par jour
+- version par version
+
+---
+
+####  2. Éviter la perte de données
+
+Sans historisation, un nouvel upload écrase l’ancien fichier.
+
+Avec historisation, rien n’est perdu.
+
+---
+
+####  3. Permettre l’analyse temporelle
+
+On peut analyser les tendances :
+
+- évolution des prix
+- changement de comportement
+- statistiques dans le temps
+
+---
+
+####  4. Revenir en arrière (rollback)
+
+Si une erreur est détectée :
+
+- on peut restaurer une ancienne version
+- ou corriger les données
+
+---
+
+### 5. Bonnes pratiques Data Lake
+
+Dans un Data Lake, on ne remplace pas les fichiers :
+
+On ajoute de nouvelles versions
+
+Exemple :
+
+```text
+data/
+ ├── bitcoin_2026-06-10.json
+ ├── bitcoin_2026-06-11.json
+ └── bitcoin_2026-06-12.json
+```
+#### Configuration
 
 ```powershell
-# Nouveau contenu JSON
+# -----------------------------
+# 1. Création d’un second fichier JSON (nouveau contenu)
+# -----------------------------
+# On écrase ou crée data/test.json avec un nouveau contenu
 '{"message": "second upload", "source": "tp1"}' | Out-File -Encoding utf8 data/test.json
 
-# Changer le nom du blob (test_2 au lieu de test)
+
+# -----------------------------
+# 2. Modification du nom du blob dans le script Python
+# -----------------------------
+# On remplace le nom du fichier dans le chemin du blob
+# (on passe de test.json à test_2.json pour historiser le fichier)
+
 (Get-Content scripts/upload_blob.py) `
-  -replace 'bitcoin/year=2026/month=05/day=10/test.json', 'bitcoin/year=2026/month=05/day=10/test_2.json' `
+  -replace 'bitcoin/year=2026/month=05/day=10/test.json', `
+           'bitcoin/year=2026/month=05/day=10/test_2.json' `
   | Set-Content scripts/upload_blob.py
 
+
+# -----------------------------
+# 3. Exécution du script Python
+# -----------------------------
+# Lance l’upload vers Azure Blob Storage (ou Azurite en local)
 py scripts/upload_blob.py
 ```
 
@@ -553,17 +697,16 @@ raw/
 
 ## Résumé des commandes clés
 
-| Commande | Rôle |
-|---|---|
-| `Ctrl+Shift+P → Azurite: Start` | Démarrer Azurite dans VS Code |
-| `$env:AZURE_STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"` | Définir la connexion Azurite |
-| `py scripts/upload_blob.py` | Uploader un fichier vers Azurite |
-| `Get-Content data/test.json` | Vérifier le contenu d'un fichier |
+| Commande | Rôle | Explication détaillée |
+|----------|------|------------------------|
+| `Ctrl+Shift+P → Azurite: Start` | Démarrer Azurite dans VS Code | Lance l’émulateur Azure Storage (Blob, Queue, Table) directement dans VS Code. Cela simule un environnement cloud en local sans connexion Azure réelle. |
+| `$env:AZURE_STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"` | Définir la connexion Azurite | Configure la variable d’environnement pour dire au SDK Python d’utiliser Azurite au lieu d’Azure. C’est une connexion locale standard utilisée pour le développement. |
+| `py scripts/upload_blob.py` | Uploader un fichier vers Azurite | Exécute le script Python qui se connecte à Azurite et envoie un fichier JSON dans un container Blob. Cela simule un upload vers le cloud. |
+| `Get-Content data/test.json` | Vérifier le contenu d'un fichier | Affiche le contenu du fichier local pour vérifier les données avant upload. Permet de valider ce qui sera envoyé dans le Data Lake. |
+
 ---
 
 # TP 2 - Blob vers SQL (Azure Blob Storage - SQLite)
-
-
 
 ---
 
@@ -593,6 +736,45 @@ Azure Blob Storage        Script Python        SQLite
 > On garde le même projet que le TP 1 : `TP-AZURE-BLOB`
 
 ---
+
+## C’est quoi SQLite ?
+
+SQLite est une **base de données légère et locale** qui fonctionne directement dans un fichier sur ton ordinateur, sans serveur.
+
+---
+
+## Comment ça fonctionne ?
+
+- Toute la base est stockée dans un seul fichier (ex : `dataops.db`)
+- Aucune installation de serveur n’est nécessaire
+- Les données sont accessibles via SQL
+
+---
+
+## Pourquoi utiliser SQLite ?
+
+- Facile à installer et à utiliser
+- Très rapide pour des petits projets
+- Parfait pour le développement et les tests
+- Idéal pour les applications locales ou embarquées
+
+---
+
+## Différence avec une base classique
+
+| SQLite | Base de données classique |
+|--------|--------------------------|
+| Fichier local | Serveur distant |
+| Pas de configuration | Configuration complexe |
+| Léger | Plus puissant mais plus lourd |
+
+---
+
+## En résumé
+
+SQLite est une **base de données simple, locale et sans serveur**, idéale pour stocker et manipuler des données rapidement en développement ou en petit projet.
+
+## Configuration
 
 ## Étape 1 - Se repositionner dans le projet
 
@@ -725,6 +907,15 @@ py scripts/load_blob_to_sql.py
 
 > Le résultat exact dépend des fichiers présents dans votre container `raw`.
 
+### Résumé du script
+
+- Ce script se connecte à Azure Blob Storage (ou Azurite en local) et récupère les fichiers du container `raw`.  
+- Il crée une base de données SQLite locale si elle n’existe pas encore.  
+- Il parcourt tous les blobs et télécharge leur contenu.  
+- Il lit chaque fichier JSON et extrait le champ `"message"`.  
+- Il insère ces données dans une table SQLite en évitant les doublons.  
+- Au final, il transforme des fichiers stockés dans le cloud en données exploitables en base locale.
+
 ---
 
 ## Étape 6 – Vérifier les données dans SQLite
@@ -777,22 +968,44 @@ py -c "import sqlite3; conn=sqlite3.connect('database/dataops.db'); print(conn.e
 ---
 
 ## Étape 9 - Ajouter un nouveau blob et recharger
+```
+# -----------------------------
+# 1. Création d’un nouveau fichier JSON
+# -----------------------------
+# On écrase le fichier data/test.json avec un nouveau contenu
+# Ce fichier représente une nouvelle version des données (historisation)
 
-```powershell
-# Nouveau fichier JSON
 '{"message": "third upload", "source": "tp2"}' | Out-File -Encoding utf8 data/test.json
 
-# Modifier le nom du blob dans upload_blob.py
+
+# -----------------------------
+# 2. Modification du nom du blob dans le script Python
+# -----------------------------
+# On met à jour le nom du fichier envoyé dans Azure Blob Storage
+# Ici on passe à une version "test_3.json" pour conserver l’historique
+
 (Get-Content scripts/upload_blob.py) `
   -replace 'BLOB_NAME = ".*"', 'BLOB_NAME = "bitcoin/year=2026/month=05/day=10/test_3.json"' `
   | Set-Content scripts/upload_blob.py
 
-# Uploader
+
+# -----------------------------
+# 3. Upload vers Azure Blob Storage (ou Azurite en local)
+# -----------------------------
+# Exécute le script Python qui envoie le fichier JSON dans le container "raw"
+
 py scripts/upload_blob.py
 
-# Recharger vers SQLite
+
+# -----------------------------
+# 4. Chargement des données vers SQLite
+# -----------------------------
+# Récupère les fichiers présents dans Blob Storage
+# puis les insère dans la base SQLite locale
+
 py scripts/load_blob_to_sql.py
 ```
+
 ![image](https://hackmd.io/_uploads/S1Q4dViJGe.png)
 
 Vérifier le résultat final :
@@ -897,6 +1110,50 @@ Dans ce TP, vous allez :
 
 ---
 
+## C’est quoi dbt ?
+
+**dbt (data build tool)** est un outil qui permet de transformer et organiser des données directement dans un entrepôt de données (data warehouse) en utilisant du SQL.
+
+---
+
+## À quoi ça sert ?
+
+dbt sert à :
+
+- Transformer des données brutes en données prêtes à l’analyse
+- Créer des modèles SQL réutilisables
+- Structurer les pipelines de données (ELT)
+- Tester la qualité des données
+- Documenter automatiquement les transformations
+
+---
+
+## Comment ça fonctionne ?
+
+1. Les données sont chargées dans un data warehouse (ex : BigQuery, Snowflake, PostgreSQL)
+2. dbt exécute des requêtes SQL pour transformer ces données
+3. Il crée des tables ou vues finales prêtes pour l’analyse
+
+---
+
+## Pourquoi utiliser dbt ?
+
+- Tout est en SQL, donc simple à comprendre et à utiliser  
+- Les transformations sont versionnées comme du code (Git-friendly)  
+- Les données peuvent être testées automatiquement (qualité, cohérence)  
+- Les pipelines data sont mieux organisés et plus lisibles  
+- La collaboration entre data engineers et data analysts est facilitée  
+
+---
+
+## dbt dans un pipeline data
+
+```text
+Data source → Data warehouse → dbt → Tables propres → Dashboard / BI
+```
+
+---
+
 ## 2. Pré-requis
 
 - avoir terminé le TP 1 ;
@@ -930,6 +1187,19 @@ Créer le venv :
 py -3.11 -m venv .venv
 ```
 ![image](https://hackmd.io/_uploads/Byu_6mNxGe.png)
+
+## À quoi ça sert ?
+
+Un `venv` permet de :
+
+- Isoler les dépendances d’un projet  
+- Éviter les conflits entre bibliothèques Python  
+- Avoir des versions différentes de packages selon les projets  
+- Reproduire facilement un environnement sur une autre machine
+
+## En résumé
+
+Créer un venv permet d’avoir un Python isolé par projet, avec ses propres dépendances, pour éviter les conflits et rendre le projet reproductible.
 
 Activer le venv :
 
@@ -972,6 +1242,7 @@ dbt --version
 ```
 ![image](https://hackmd.io/_uploads/ByPN1EExfx.png)
 
+## Figer les versions dbt
 > Pour figer les versions dans un fichier `requirements.txt` (bonne pratique) :
 > ```bash
 > pip freeze > requirements.txt
@@ -989,12 +1260,14 @@ dbt --version
 
 Depuis `TP-AZURE-BLOB` :
 
+Exécuter la commande
+
 ```bash
 dbt init dataops_dbt
 ```
 ![image](https://hackmd.io/_uploads/SyFpJ44ezg.png)
 
-Lorsque dbt demande le type de base :
+Lorsque dbt demande le type de base, choisir le numéro 1 :
 
 ```
 sqlite
@@ -1025,18 +1298,37 @@ TP-AZURE-BLOB/
 
 ## 7. Étape 5 : Configurer profiles.yml
 
+### Pourquoi configurer `profiles.yml` ?
+
+Le fichier `profiles.yml` est **essentiel pour que dbt sache où et comment se connecter à votre data warehouse**.  
+
+Même s’il n’est pas dans le projet dbt, il est global à votre machine et permet de :  
+
+- Définir les informations de connexion (hôte, base de données, utilisateur, mot de passe)  
+- Gérer différents environnements (dev, test, prod)  
+- Permettre à dbt d’exécuter les transformations SQL dans le bon entrepôt  
+- Séparer la configuration de la logique du projet (meilleure sécurité et portabilité)  
+
+### Emplacement du fichier
+
 | OS | Chemin |
 |---|---|
 | Windows | `C:\Users\<votre_utilisateur>\.dbt\profiles.yml` |
 | Mac/Linux | `~/.dbt/profiles.yml` |
 
 > Le fichier `profiles.yml` ne se trouve **pas** dans le projet dbt mais il est global à la machine.
+> Important : dbt lit ce fichier **globalement**, donc tous vos projets dbt sur la machine peuvent réutiliser la même configuration.
 
 ![image](https://hackmd.io/_uploads/Hyw-WE4gfl.png)
 
 Le contenu actuel du fichier :
 ![image](https://hackmd.io/_uploads/SJmIWEEeMl.png)
 
+Ouvrir le fichier :
+
+```powershell
+code "$env:USERPROFILE\.dbt\profiles.yml"
+```
 Remplacer le contenu par :
 
 ```yaml
@@ -1214,7 +1506,7 @@ print(header_row)
 print(sep)
 for row in rows:
     print('|' + '|'.join(f' {str(row[i]):<{col_widths[i]}} ' for i in range(len(headers))) + '|')
-print(sep)
+print(sep)"
 "
 
 ```
@@ -1306,7 +1598,15 @@ dbt test --select analytics_messages
 ## 14. Étape 12 : Générer la documentation & lanacement du serveur
 
 ```bash
+# Génère la documentation du projet dbt
+# Cela crée des fichiers HTML basés sur les modèles, tests et sources du projet
+
 dbt docs generate
+
+# Lance un serveur local pour visualiser la documentation dbt
+# Ouvre un site web local (généralement http://localhost:8080)
+# Permet de naviguer dans les modèles, sources et dépendances
+
 dbt docs serve
 ```
 ![image](https://hackmd.io/_uploads/HJ6YKVEeGl.png)
@@ -1469,17 +1769,6 @@ L'avantage : dbt résout automatiquement l'ordre d'exécution et construit le li
 
 ---
 
-## 19. Livrables attendus
-
-- projet dbt fonctionnel (`dbt debug` → All checks passed) ;
-- modèle SQL `analytics_messages.sql` ;
-- fichier `schema.yml` avec tests configurés ;
-- capture d'écran `dbt docs` (lineage visible) ;
-- preuve des tests PASS (`dbt test`) ;
-- réponses aux questions de compréhension.
-
----
-
 ## Conclusion
 
 Dans ce TP, vous avez construit une vraie couche Analytics Engineering avec dbt.
@@ -1498,8 +1787,6 @@ Vous avez appris à :
 ---
 
 # TP 4 - Orchestration du Pipeline DataOps
-
-
 
 ---
 
@@ -1566,16 +1853,10 @@ Le pipeline automatise l'ensemble de la chaîne DataOps :
 
 ## Mise en place
 
-### Étape 1 : Ouvrir le projet
+### Étape 1 : Se positionner dans le projet
 
 ```powershell
-cd "C:\Users\<votre_utilisateur>\TP-AZURE-BLOB"
-```
-
-Ou si le projet est sur le bureau :
-
-```powershell
-cd "$env:USERPROFILE\Desktop\TP-AZURE-BLOB"
+cd TP-AZURE-BLOB
 ```
 
 ---
@@ -1645,7 +1926,9 @@ mkdir logs
 ```
 ![image](https://hackmd.io/_uploads/S1KOkLEeGe.png)
 
-Le dossier logs/ est créé automatiquement (voir TP 3) par dbt lorsqu'on exécute les commandes comme :
+Si la commande affiche une erreur : ```already exists``` : 
+
+le dossier logs/ est créé automatiquement (voir TP 3) par dbt lorsqu'on exécute les commandes comme :
 
 ```powershell
 dbt debug
@@ -1753,8 +2036,8 @@ dataops_dbt:
 ```
 ![image](https://hackmd.io/_uploads/r13sg8VeGe.png)
 
+## Pourquoi ce changement ?
 
-> **Pourquoi ce changement ?**  
 > Dans le TP 4, dbt est lancé depuis la racine du projet avec l'option `--project-dir`.  
 > Le chemin SQLite passe donc de `../database/dataops.db` à `database/dataops.db`.
 
@@ -1762,9 +2045,13 @@ dataops_dbt:
 
 ### Étape 9 : Vérifier `schema.yml`
 
-Créer ou modifier `dataops_dbt/models/schema.yml` :
 
-```yaml
+```powershell
+# Créer ou modifier `dataops_dbt/models/schema.yml` :
+New-Item -ItemType Directory -Force -Path "dataops_dbt\models" | Out-Null
+
+# Le contenu du fichier
+@"
 version: 2
 
 models:
@@ -1777,6 +2064,7 @@ models:
       - name: message
         tests:
           - not_null
+"@ | Set-Content -Path "dataops_dbt\models\schema.yml"
 ```
 
 Supprimer les modèles exemple dbt si nécessaire :
@@ -1790,9 +2078,84 @@ Remove-Item -Recurse -Force dataops_dbt\models\example
 
 ### Étape 10 : Exécuter le pipeline
 
+Avant d'exécuter le pipeline il faut le package Azure Storage Blob :
+
+```powershell
+pip install azure-storage-blob
+```
+
+Exécuter le pipeline : 
+
 ```powershell
 python scripts/run_pipeline.py
 ```
+
+## Erreur rencontrée : chemin DBT introuvable
+
+### Symptôme
+
+Lors de l'exécution du pipeline :
+
+```powershell
+python scripts/run_pipeline.py
+```
+
+Le pipeline échoue à l'étape **DBT RUN** avec le message :
+
+```text
+Le chemin d'accès spécifié est introuvable.
+Exception: Pipeline failed at : DBT RUN
+```
+
+### Cause
+
+Le script `scripts/run_pipeline.py` utilisait un chemin absolu vers `dbt.exe` :
+
+```python
+DBT = r"C:\Users\lopap\OneDrive\Bureau\Lab_Azurite_Blob\TP-AZURE-BLOB\.venv\Scripts\dbt.exe"
+```
+
+Après déplacement ou clonage du projet dans un autre répertoire, ce chemin n'était plus valide.
+
+### Diagnostic
+
+Vérifier la présence de l'exécutable DBT :
+
+```powershell
+Get-ChildItem .\.venv\Scripts\dbt*
+```
+
+Résultat attendu :
+
+```text
+dbt.exe
+```
+
+Vérifier également que le chemin configuré dans le script existe :
+
+```powershell
+Test-Path "C:\Users\...\dbt.exe"
+```
+
+### Solution
+
+Remplacer le chemin absolu par un chemin relatif :
+
+```python
+from pathlib import Path
+
+DBT = str(Path(".venv") / "Scripts" / "dbt.exe")
+```
+
+Ou utiliser directement la commande disponible dans l'environnement virtuel :
+
+```python
+DBT = "dbt"
+```
+
+### Bonne pratique
+
+Éviter les chemins absolus dans les scripts du projet afin de garantir la portabilité entre différents postes de travail et environnements de développement.
 
 ---
 
