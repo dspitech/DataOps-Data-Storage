@@ -224,6 +224,100 @@ Ctrl + Shift + P → Azurite: Start
 
 ---
 
+## Installation d'Azurite via npm
+
+## Prérequis
+
+Avant d'installer Azurite, vérifiez que Node.js et npm sont installés :
+
+```bash
+node -v
+npm -v
+```
+
+## Installer Azurite globalement
+
+```bash
+npm install -g azurite
+```
+
+Cette commande installe Azurite globalement afin que la commande `azurite` soit disponible depuis n'importe quel terminal. :contentReference[oaicite:0]{index=0}
+
+## Vérifier l'installation
+
+```bash
+azurite --version
+```
+
+## Démarrer Azurite
+
+### Démarrer tous les services (Blob, Queue et Table)
+
+```bash
+azurite
+```
+
+Par défaut, les données sont stockées dans le répertoire courant. :contentReference[oaicite:1]{index=1}
+
+### Démarrer avec un dossier de stockage dédié
+
+```bash
+azurite -l ./azurite-data
+```
+
+Ou avec les options complètes :
+
+```bash
+azurite --silent --location ./azurite-data --debug ./azurite-data/debug.log
+```
+
+:contentReference[oaicite:2]{index=2}
+
+## Démarrer uniquement le service Blob
+
+```bash
+azurite-blob -l ./azurite-data
+```
+
+## Démarrer uniquement le service Queue
+
+```bash
+azurite-queue -l ./azurite-data
+```
+
+## Démarrer uniquement le service Table
+
+```bash
+azurite-table -l ./azurite-data
+```
+
+:contentReference[oaicite:3]{index=3}
+
+## Ports par défaut
+
+| Service | Port |
+|----------|------|
+| Blob Storage | 10000 |
+| Queue Storage | 10001 |
+| Table Storage | 10002 |
+
+:contentReference[oaicite:4]{index=4}
+
+## Exemple de chaîne de connexion
+
+```text
+DefaultEndpointsProtocol=http;
+AccountName=devstoreaccount1;
+AccountKey=Eby8vdM02xNOcqFe...
+BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;
+QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;
+TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;
+```
+
+Une fois Azurite démarré, votre application peut utiliser cette connexion locale à la place d'un compte Azure Storage réel pendant le développement.
+
+---
+
 ### Étape 4 : Créer le projet
 
 Dans PowerShell, créer la structure de dossiers :
