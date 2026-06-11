@@ -128,7 +128,7 @@ Chaque développeur peut disposer de son propre environnement de stockage local 
 Azurite s'intègre facilement avec :
 
 - Docker
-- GitHub Actions
+- GitHub Action
 - Azure DevOps
 - Pipelines CI/CD
 
@@ -2701,7 +2701,7 @@ dbt_run    dbt_test
 ```
 ![image](https://hackmd.io/_uploads/ByNJw_SxMe.png)
 ![image](https://hackmd.io/_uploads/rJe7DOSxMe.png)
-![image](https://hackmd.io/_uploads/H1YAv_BgGg.png)
+![run](https://hackmd.io/_uploads/rJ8tRU_Zfl.png)
 ![image](https://hackmd.io/_uploads/Sy7IPOSeMg.png)
 ![image](https://hackmd.io/_uploads/BJHKPOrxGx.png)
 ![image](https://hackmd.io/_uploads/SkGivuHgGe.png)
