@@ -83,6 +83,106 @@ Azurite Blob Storage (Container raw)
 
 ### Étape 1 : Installer Azurite dans VS Code
 
+## Qu'est-ce qu'Azurite ?
+
+**Azurite** est un émulateur local des services de stockage de Microsoft Azure. Il permet aux développeurs de simuler certains services Azure directement sur leur machine, sans avoir besoin d'un compte Azure ni d'accéder au cloud.
+
+Azurite prend en charge principalement :
+
+- **Blob Storage** : stockage de fichiers et d'objets
+- **Queue Storage** : gestion de files de messages
+- **Table Storage** : stockage NoSQL simple
+
+## Pourquoi utiliser Azurite ?
+
+## 1. Développer localement
+
+Azurite permet de développer et tester une application utilisant Azure Storage sans consommer de ressources cloud.
+
+### Avantages
+
+- Gratuit
+- Fonctionne hors ligne
+- Démarrage rapide
+- Aucun compte Azure requis
+
+## 2. Tester avant le déploiement
+
+Les développeurs peuvent valider le fonctionnement de leur application localement avant de la déployer sur Azure.
+
+```text
+Application → Azurite (local)
+```
+
+Puis, en production :
+
+```
+Application → Azure Storage (cloud)
+```
+
+## 3. Travailler en équipe
+
+Chaque développeur peut disposer de son propre environnement de stockage local sans partager une ressource Azure commune.
+
+## 4. Automatiser les tests
+
+Azurite s'intègre facilement avec :
+
+- Docker
+- GitHub Actions
+- Azure DevOps
+- Pipelines CI/CD
+
+### Exemple de lancement avec Docker
+
+```bash
+docker run -p 10000:10000 -p 10001:10001 -p 10002:10002 mcr.microsoft.com/azure-storage/azurite
+```
+
+## Exemple d'utilisation
+
+Une application web qui stocke des images dans Azure Blob Storage :
+
+```text
+Utilisateur
+    ↓
+Application Web
+    ↓
+Azure Blob Storage
+```
+
+Pendant le développement :
+
+```text
+Utilisateur
+    ↓
+Application Web
+    ↓
+Azurite
+```
+
+L'application utilise les mêmes API Azure Storage, mais les données sont stockées localement.
+
+## Limites d'Azurite
+
+Azurite est conçu pour le développement et les tests locaux.
+
+Il ne doit pas être utilisé pour :
+
+- La production
+- Les tests de charge à grande échelle
+- Certaines fonctionnalités avancées d'Azure Storage qui peuvent ne pas être totalement prises en charge
+
+## Résumé
+
+| Azure Storage | Azurite |
+|---------------|----------|
+| Service cloud réel | Émulateur local |
+| Payant selon l'utilisation | Gratuit |
+| Utilisé en production | Utilisé en développement |
+| Hébergé sur Azure | Exécuté localement |
+
+## Installation
 Dans VS Code, ouvrir le marketplace des extensions (`Ctrl+Shift+X`), rechercher **Azurite** et installer l'extension Microsoft.
 
 > Version utilisée : **Azurite V3** (3.35.0) - supporte Blob, Queue et Table
